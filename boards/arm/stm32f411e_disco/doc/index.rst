@@ -1,7 +1,7 @@
 .. _stm32f411e_disco_board:
 
-STM32F411E-DISCO
-################
+ST STM32F411E Discovery
+#######################
 
 Overview
 ********
@@ -83,11 +83,13 @@ hardware features:
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on Zephyr porting.
 
 The default configuration can be found in the defconfig file
-:file:`boards/arm/stm32f411e_disco/stm32f411e_disco_defconfig`
+:zephyr_file:`boards/arm/stm32f411e_disco/stm32f411e_disco_defconfig`
 
 
 Pin Mapping
@@ -103,7 +105,7 @@ Default Zephyr Peripheral Mapping:
 - UART_2_TX : PA2
 - UART_2_RX : PA3
 - LD3 : PD13
-- LD4 : PD12
+- LD4 : PD12 (PWM4 CH1)
 - LD5 : PD14
 - LD6 : PD15
 

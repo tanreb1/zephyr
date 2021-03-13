@@ -12,7 +12,7 @@ with non-blocking sockets and a ``select()`` call. This is a variant of
 the :ref:`async-sockets-echo-sample` sample.
 
 The source code for this sample application can be found at:
-:file:`samples/net/sockets/echo_async_select`.
+:zephyr_file:`samples/net/sockets/echo_async_select`.
 
 Requirements
 ************
@@ -30,12 +30,6 @@ Build the Zephyr version of the sockets/echo_async application like this:
    :board: <board_to_use>
    :goals: build
    :compact:
-
-``board_to_use`` defaults to ``qemu_x86``. In this case, you can run the
-application in QEMU using ``make run``. If you used another BOARD, you
-will need to consult its documentation for application deployment
-instructions. You can read about Zephyr support for specific boards in
-the documentation at :ref:`boards`.
 
 After the sample starts, it expects connections at 192.0.2.1 (IPv4), or
 2001:db8::1 (IPv6), port 4242. The easiest way to connect is:

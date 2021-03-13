@@ -5,46 +5,46 @@
  */
 
 #include <device.h>
-#include <gpio.h>
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/gpio.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 #include <kernel.h>
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include "apds9960.h"
 
 extern struct apds9960_data apds9960_driver;
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
 #include <logging/log.h>
-LOG_MODULE_DECLARE(APDS9960);
+LOG_MODULE_DECLARE(APDS9960, CONFIG_SENSOR_LOG_LEVEL);
 
 void apds9960_work_cb(struct k_work *work)
 {
 	struct apds9960_data *data = CONTAINER_OF(work,
 						  struct apds9960_data,
 						  work);
-	struct device *dev = data->dev;
+	const struct device *dev = data->dev;
 
 	if (data->p_th_handler != NULL) {
 		data->p_th_handler(dev, &data->p_th_trigger);
 	}
 
-	gpio_pin_enable_callback(data->gpio, DT_AVAGO_APDS9960_0_INT_GPIOS_PIN);
+	apds9960_setup_int(data, true);
 }
 
-int apds9960_attr_set(struct device *dev,
+int apds9960_attr_set(const struct device *dev,
 		      enum sensor_channel chan,
 		      enum sensor_attribute attr,
 		      const struct sensor_value *val)
 {
-	struct apds9960_data *data = dev->driver_data;
+	const struct apds9960_config *config = dev->config;
+	struct apds9960_data *data = dev->data;
 
 	if (chan == SENSOR_CHAN_PROX) {
 		if (attr == SENSOR_ATTR_UPPER_THRESH) {
 			if (i2c_reg_write_byte(data->i2c,
-					       APDS9960_I2C_ADDRESS,
+					       config->i2c_address,
 					       APDS9960_PIHT_REG,
-					       (u8_t)val->val1)) {
+					       (uint8_t)val->val1)) {
 				return -EIO;
 			}
 
@@ -52,9 +52,9 @@ int apds9960_attr_set(struct device *dev,
 		}
 		if (attr == SENSOR_ATTR_LOWER_THRESH) {
 			if (i2c_reg_write_byte(data->i2c,
-					       APDS9960_I2C_ADDRESS,
+					       config->i2c_address,
 					       APDS9960_PILT_REG,
-					       (u8_t)val->val1)) {
+					       (uint8_t)val->val1)) {
 				return -EIO;
 			}
 
@@ -65,20 +65,21 @@ int apds9960_attr_set(struct device *dev,
 	return -ENOTSUP;
 }
 
-int apds9960_trigger_set(struct device *dev,
-			const struct sensor_trigger *trig,
-			sensor_trigger_handler_t handler)
+int apds9960_trigger_set(const struct device *dev,
+			 const struct sensor_trigger *trig,
+			 sensor_trigger_handler_t handler)
 {
-	struct apds9960_data *data = dev->driver_data;
+	const struct apds9960_config *config = dev->config;
+	struct apds9960_data *data = dev->data;
 
-	gpio_pin_disable_callback(data->gpio, DT_AVAGO_APDS9960_0_INT_GPIOS_PIN);
+	apds9960_setup_int(data, false);
 
 	switch (trig->type) {
 	case SENSOR_TRIG_THRESHOLD:
 		if (trig->chan == SENSOR_CHAN_PROX) {
 			data->p_th_handler = handler;
 			if (i2c_reg_update_byte(data->i2c,
-						APDS9960_I2C_ADDRESS,
+						config->i2c_address,
 						APDS9960_ENABLE_REG,
 						APDS9960_ENABLE_PIEN,
 						APDS9960_ENABLE_PIEN)) {
@@ -93,7 +94,10 @@ int apds9960_trigger_set(struct device *dev,
 		return -ENOTSUP;
 	}
 
-	gpio_pin_enable_callback(data->gpio, DT_AVAGO_APDS9960_0_INT_GPIOS_PIN);
+	apds9960_setup_int(data, true);
+	if (gpio_pin_get(data->gpio, data->gpio_pin) > 0) {
+		k_work_submit(&data->work);
+	}
 
 	return 0;
 }

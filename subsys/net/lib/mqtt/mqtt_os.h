@@ -20,6 +20,7 @@
 
 #include <stddef.h>
 #include <kernel.h>
+#include <sys/mutex.h>
 
 #include <net/net_core.h>
 
@@ -35,13 +36,25 @@ extern "C" {
 /**@brief Method to error logs from the module. */
 #define MQTT_ERR(...) NET_ERR(__VA_ARGS__)
 
+/**@brief Method to hexdump trace logs from the module. */
+#define MQTT_HEXDUMP_TRC(_data, _length, _str) NET_HEXDUMP_DBG(_data, _length, _str)
+
+/**@brief Method to hexdump error logs from the module. */
+#define MQTT_HEXDUMP_ERR(_data, _length, _str) NET_HEXDUMP_ERR(_data, _length, _str)
+
+/**@brief Method to hexdump warning logs from the module. */
+#define MQTT_HEXDUMP_WARN(_data, _length, _str) NET_HEXDUMP_WARN(_data, _length, _str)
+
+/**@brief Method to hexdump info logs from the module. */
+#define MQTT_HEXDUMP_INFO(_data, _length, _str) NETHEXDUMP_INFO(_data, _length, _str)
+
 /**@brief Initialize the mutex for the module, if any.
  *
  * @details This method is called during module initialization @ref mqtt_init.
  */
 static inline void mqtt_mutex_init(struct mqtt_client *client)
 {
-	k_mutex_init(&client->internal.mutex);
+	sys_mutex_init(&client->internal.mutex);
 }
 
 /**@brief Acquire lock on the module specific mutex, if any.
@@ -51,21 +64,27 @@ static inline void mqtt_mutex_init(struct mqtt_client *client)
  */
 static inline void mqtt_mutex_lock(struct mqtt_client *client)
 {
-	(void)k_mutex_lock(&client->internal.mutex, K_FOREVER);
+	int ret = sys_mutex_lock(&client->internal.mutex, K_FOREVER);
+
+	__ASSERT(ret == 0, "sys_mutex_lock failed with %d", ret);
+	(void)ret;
 }
 
 /**@brief Release the lock on the module specific mutex, if any.
  */
 static inline void mqtt_mutex_unlock(struct mqtt_client *client)
 {
-	k_mutex_unlock(&client->internal.mutex);
+	int ret = sys_mutex_unlock(&client->internal.mutex);
+
+	__ASSERT(ret == 0, "sys_mutex_unlock failed with %d", ret);
+	(void)ret;
 }
 
 /**@brief Method to get the sys tick or a wall clock in millisecond resolution.
  *
  * @retval Current wall clock or sys tick value in milliseconds.
  */
-static inline u32_t mqtt_sys_tick_in_ms_get(void)
+static inline uint32_t mqtt_sys_tick_in_ms_get(void)
 {
 	return k_uptime_get_32();
 }
@@ -76,9 +95,9 @@ static inline u32_t mqtt_sys_tick_in_ms_get(void)
  *
  * @retval Time elapsed since last_activity time.
  */
-static inline u32_t mqtt_elapsed_time_in_ms_get(u32_t last_activity)
+static inline uint32_t mqtt_elapsed_time_in_ms_get(uint32_t last_activity)
 {
-	s32_t diff = k_uptime_get_32() - last_activity;
+	int32_t diff = k_uptime_get_32() - last_activity;
 
 	if (diff < 0) {
 		return 0;

@@ -1,6 +1,6 @@
 .. _mec2016evb_assy6797:
 
-MEC2616EVB ASSY6797
+MEC2016EVB ASSY6797
 ###################
 
 Overview
@@ -19,7 +19,7 @@ Hardware
 ********
 
 - MEC1701QC2SZ ARM Cortex-M4F Processor
-- 480 KB Ram and 64 KB boot Rom
+- 480 KB RAM and 64 KB boot ROM
 - 2 Microchip BC-Link Interconnection bus
 - Keyboard interface
 - ADC & GPIO headers
@@ -62,8 +62,7 @@ features:
 Other hardware features are not currently supported by Zephyr (at the moment)
 
 The default configuration can be found in the Kconfig file:
-
-        ``boards/arm/mec2016evb_assy6797/mec2016evb_assy6797_defconfig``
+``boards/arm/mec2016evb_assy6797/mec2016evb_assy6797_defconfig``
 
 
 Connections and IOs
@@ -178,7 +177,7 @@ Flashing
    - Stop bits: 1
 
 #. Connect the MEC2016EVB_ASSY_6797 board to your host computer using the
-   UART0 port. Then build :ref: `hello_world` application. It is important
+   UART0 port. Then build :ref:`hello_world` application. It is important
    to generate a binary with a new load address, for example do the following::
 
         ${OBJCOPY} --change-addresses -0xb0000 -O binary -S ${in_elf} ${out_bin}

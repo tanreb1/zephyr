@@ -1,11 +1,12 @@
 common:
-  tags: device
-  platform_whitelist: native_posix qemu_x86
+  tags: device userspace
+  integration_platforms:
+    - native_posix
 tests:
   kernel.device:
-    tags: device
+    tags: kernel device
   kernel.device.pm:
-    tags: device
+    tags: kernel device
+    platform_exclude: mec15xxevb_assy6853
     extra_configs:
-      - CONFIG_DEVICE_POWER_MANAGEMENT=y
-
+      - CONFIG_PM_DEVICE=y

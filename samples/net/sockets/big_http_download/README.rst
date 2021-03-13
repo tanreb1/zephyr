@@ -8,14 +8,14 @@ Overview
 
 The sockets/big_http_download sample application for Zephyr implements
 a simple HTTP GET client using a BSD Sockets compatible API. Unlike
-the `sockets-http-get` sample application, it downloads a file of
+the :ref:`sockets-http-get` sample application, it downloads a file of
 several megabytes in size, and verifies its integrity using hashing. It
 also performs download repeatedly, tracking the total number of bytes
 transferred. Thus, it can serve as a "load testing" application for
 the Zephyr IP stack.
 
 The source code for this sample application can be found at:
-:file:`samples/net/sockets/big_http_download`.
+:zephyr_file:`samples/net/sockets/big_http_download`.
 
 Requirements
 ************
@@ -35,12 +35,6 @@ Build the Zephyr version of the application like this:
    :board: <board_to_use>
    :goals: build
    :compact:
-
-``board_to_use`` defaults to ``qemu_x86``. In this case, you can run the
-application in QEMU using ``make run``. If you used another BOARD, you
-will need to consult its documentation for application deployment
-instructions. You can read about Zephyr support for specific boards in
-the documentation at :ref:`boards`.
 
 After the sample starts, it issues an HTTP GET request for
 http://archive.ubuntu.com/ubuntu/dists/xenial/main/installer-amd64/current/images/hd-media/vmlinuz
@@ -81,7 +75,7 @@ Enable TLS support in the sample by building the project with the
    :compact:
 
 An alternative way is to specify ``-DOVERLAY_CONFIG=overlay-tls.conf`` when
-running cmake.
+running ``west build`` or ``cmake``.
 
 The TLS version of this sample downloads a file from
 https://www.7-zip.org/a/7z1805.exe (1.1MB). The certificate

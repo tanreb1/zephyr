@@ -12,7 +12,7 @@ queues) and setup VLANs (if enabled). The net-shell is also enabled so that
 user can monitor gPTP functionality.
 
 The source code for this sample application can be found at:
-:file:`samples/net/gptp`.
+:zephyr_file:`samples/net/gptp`.
 
 Requirements
 ************
@@ -34,7 +34,6 @@ Follow these steps to build the gPTP sample application:
 .. zephyr-app-commands::
    :zephyr-app: samples/net/gptp
    :board: <board to use>
-   :conf: prj_base.conf
    :goals: build
    :compact:
 
@@ -48,7 +47,7 @@ Setting up Linux Host
 =====================
 
 If you need VLAN support in your network, then the
-:file:`samples/net/vlan/vlan-setup-linux.sh` provides a script that can be
+:zephyr_file:`samples/net/vlan/vlan-setup-linux.sh` provides a script that can be
 executed on the Linux host. It creates two VLANs on the Linux host and creates
 routes to Zephyr. If you are using native_posix board, then
 the ``net-setup.sh`` will create VLAN setup automatically with this command:
@@ -142,3 +141,44 @@ Compile the ``ptp4l`` daemon and start it like this:
 
 Use the ``default.cfg`` as a base, copy it to ``gPTP-zephyr.cfg``, and modify
 it according to your needs.
+
+
+Multiport Setup
+===============
+
+If you set :option:`CONFIG_NET_GPTP_NUM_PORTS` larger than 1, then gPTP sample
+will create multiple TSN ports. This configuration is currently only supported
+in native_posix board.
+
+You need to enable the ports in the net-tools. If the number of ports is set
+to 2, then give following commands to create the network interfaces in host
+side:
+
+.. code-block:: console
+
+    sudo ./net-setup.sh -c zeth0-gptp.conf -i zeth0 start
+    sudo ./net-setup.sh -c zeth1-gptp.conf -i zeth1 start
+
+After that you can start ptp4l daemon for both interfaces. Please use two
+terminals when starting ptp4l daemon. Note that you must use ptp4l as OpenAVNU
+does not work with software clock available in native_posix.
+
+.. code-block:: console
+
+    cd <ptp4l directory>
+    sudo ./ptp4l -2 -f gPTP-zephyr.cfg -m -q -l 6 -S -i zeth0
+    sudo ./ptp4l -2 -f gPTP-zephyr.cfg -m -q -l 6 -S -i zeth1
+
+Compile Zephyr application.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/net/gptp
+   :board: native_posix
+   :goals: build
+   :compact:
+
+When the Zephyr image is build, you can start it like this:
+
+.. code-block:: console
+
+    build/zephyr/zephyr.exe -attach_uart

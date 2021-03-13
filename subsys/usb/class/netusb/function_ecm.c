@@ -11,20 +11,15 @@ LOG_MODULE_REGISTER(usb_ecm);
 /* Enable verbose debug printing extra hexdumps */
 #define VERBOSE_DEBUG	0
 
-/* This enables basic hexdumps */
-#define NET_LOG_ENABLED	0
-#include <net_private.h>
-
-#include <zephyr.h>
-
-#include <usb_device.h>
-#include <usb_common.h>
-
 #include <net/net_pkt.h>
 #include <net/ethernet.h>
+#include <net_private.h>
 
+#include <usb/usb_device.h>
+#include <usb/usb_common.h>
+#include <usb/class/usb_cdc.h>
 #include <usb_descriptor.h>
-#include <class/usb_cdc.h>
+
 #include "netusb.h"
 
 #define USB_CDC_ECM_REQ_TYPE		0x21
@@ -34,7 +29,8 @@ LOG_MODULE_REGISTER(usb_ecm);
 #define ECM_OUT_EP_IDX			1
 #define ECM_IN_EP_IDX			2
 
-static void ecm_int_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status);
+
+static uint8_t tx_buf[NET_ETH_MAX_FRAME_SIZE], rx_buf[NET_ETH_MAX_FRAME_SIZE];
 
 struct usb_cdc_ecm_config {
 #ifdef CONFIG_USB_COMPOSITE_DEVICE
@@ -82,14 +78,14 @@ USBD_CLASS_DESCR_DEFINE(primary, 0) struct usb_cdc_ecm_config cdc_ecm_cfg = {
 	/* Header Functional Descriptor */
 	.if0_header = {
 		.bFunctionLength = sizeof(struct cdc_header_descriptor),
-		.bDescriptorType = CS_INTERFACE,
+		.bDescriptorType = USB_CS_INTERFACE_DESC,
 		.bDescriptorSubtype = HEADER_FUNC_DESC,
 		.bcdCDC = sys_cpu_to_le16(USB_1_1),
 	},
 	/* Union Functional Descriptor */
 	.if0_union = {
 		.bFunctionLength = sizeof(struct cdc_union_descriptor),
-		.bDescriptorType = CS_INTERFACE,
+		.bDescriptorType = USB_CS_INTERFACE_DESC,
 		.bDescriptorSubtype = UNION_FUNC_DESC,
 		.bControlInterface = 0,
 		.bSubordinateInterface0 = 1,
@@ -97,11 +93,11 @@ USBD_CLASS_DESCR_DEFINE(primary, 0) struct usb_cdc_ecm_config cdc_ecm_cfg = {
 	/* Ethernet Networking Functional descriptor */
 	.if0_netfun_ecm = {
 		.bFunctionLength = sizeof(struct cdc_ecm_descriptor),
-		.bDescriptorType = CS_INTERFACE,
+		.bDescriptorType = USB_CS_INTERFACE_DESC,
 		.bDescriptorSubtype = ETHERNET_FUNC_DESC,
 		.iMACAddress = 4,
 		.bmEthernetStatistics = sys_cpu_to_le32(0), /* None */
-		.wMaxSegmentSize = sys_cpu_to_le16(NETUSB_MTU),
+		.wMaxSegmentSize = sys_cpu_to_le16(NET_ETH_MAX_FRAME_SIZE),
 		.wNumberMCFilters = sys_cpu_to_le16(0), /* None */
 		.bNumberPowerFilters = 0, /* No wake up */
 	},
@@ -168,9 +164,14 @@ USBD_CLASS_DESCR_DEFINE(primary, 0) struct usb_cdc_ecm_config cdc_ecm_cfg = {
 	},
 };
 
-static u8_t ecm_get_first_iface_number(void)
+static uint8_t ecm_get_first_iface_number(void)
 {
 	return cdc_ecm_cfg.if0.bInterfaceNumber;
+}
+
+static void ecm_int_in(uint8_t ep, enum usb_dc_ep_cb_status_code ep_status)
+{
+	LOG_DBG("EP 0x%x status %d", ep, ep_status);
 }
 
 static struct usb_ep_cfg_data ecm_ep_data[] = {
@@ -191,10 +192,8 @@ static struct usb_ep_cfg_data ecm_ep_data[] = {
 	},
 };
 
-static u8_t tx_buf[NETUSB_MTU], rx_buf[NETUSB_MTU];
-
-static int ecm_class_handler(struct usb_setup_packet *setup, s32_t *len,
-			     u8_t **data)
+static int ecm_class_handler(struct usb_setup_packet *setup, int32_t *len,
+			     uint8_t **data)
 {
 	LOG_DBG("len %d req_type 0x%x req 0x%x enabled %u",
 		*len, setup->bmRequestType, setup->bRequest,
@@ -221,17 +220,12 @@ static int ecm_class_handler(struct usb_setup_packet *setup, s32_t *len,
 	return 0;
 }
 
-static void ecm_int_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
-{
-	LOG_DBG("EP 0x%x status %d", ep, ep_status);
-}
-
 /* Retrieve expected pkt size from ethernet/ip header */
 static size_t ecm_eth_size(void *ecm_pkt, size_t len)
 {
 	struct net_eth_hdr *hdr = (void *)ecm_pkt;
-	u8_t *ip_data = (u8_t *)ecm_pkt + sizeof(struct net_eth_hdr);
-	u16_t ip_len;
+	uint8_t *ip_data = (uint8_t *)ecm_pkt + sizeof(struct net_eth_hdr);
+	uint16_t ip_len;
 
 	if (len < NET_IPV6H_LEN + sizeof(struct net_eth_hdr)) {
 		/* Too short */
@@ -256,25 +250,26 @@ static size_t ecm_eth_size(void *ecm_pkt, size_t len)
 
 static int ecm_send(struct net_pkt *pkt)
 {
-	struct net_buf *frag;
-	int b_idx = 0, ret;
+	size_t len = net_pkt_get_len(pkt);
+	int ret;
 
-	net_pkt_hexdump(pkt, "<");
-
-	if (!pkt->frags) {
-		return -ENODATA;
+	if (VERBOSE_DEBUG) {
+		net_pkt_hexdump(pkt, "<");
 	}
 
-	/* copy payload */
-	for (frag = pkt->frags; frag; frag = frag->frags) {
-		memcpy(&tx_buf[b_idx], frag->data, frag->len);
-		b_idx += frag->len;
+	if (len > sizeof(tx_buf)) {
+		LOG_WRN("Trying to send too large packet, drop");
+		return -ENOMEM;
+	}
+
+	if (net_pkt_read(pkt, tx_buf, len)) {
+		return -ENOBUFS;
 	}
 
 	/* transfer data to host */
 	ret = usb_transfer_sync(ecm_ep_data[ECM_IN_EP_IDX].ep_addr,
-				tx_buf, b_idx, USB_TRANS_WRITE);
-	if (ret != b_idx) {
+				tx_buf, len, USB_TRANS_WRITE);
+	if (ret != len) {
 		LOG_ERR("Transfer failure");
 		return -EINVAL;
 	}
@@ -282,46 +277,41 @@ static int ecm_send(struct net_pkt *pkt)
 	return 0;
 }
 
-static void ecm_read_cb(u8_t ep, int size, void *priv)
+static void ecm_read_cb(uint8_t ep, int size, void *priv)
 {
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 
 	if (size <= 0) {
 		goto done;
 	}
 
 	/* Linux considers by default that network usb device controllers are
-	 * not able to handle Zero Lenght Packet (ZLP) and then generates
+	 * not able to handle Zero Length Packet (ZLP) and then generates
 	 * a short packet containing a null byte. Handle by checking the IP
 	 * header length and dropping the extra byte.
 	 */
-	if (rx_buf[size - 1] == 0) { /* last byte is null */
+	if (rx_buf[size - 1] == 0U) { /* last byte is null */
 		if (ecm_eth_size(rx_buf, size) == (size - 1)) {
 			/* last byte has been appended as delimiter, drop it */
 			size--;
 		}
 	}
 
-	pkt = net_pkt_get_reserve_rx(K_FOREVER);
+	pkt = net_pkt_alloc_with_buffer(netusb_net_iface(), size,
+					AF_UNSPEC, 0, K_FOREVER);
 	if (!pkt) {
 		LOG_ERR("no memory for network packet\n");
 		goto done;
 	}
 
-	frag = net_pkt_get_frag(pkt, K_FOREVER);
-	if (!frag) {
-		LOG_ERR("no memory for network packet\n");
+	if (net_pkt_write(pkt, rx_buf, size)) {
+		LOG_ERR("Unable to write into pkt\n");
 		net_pkt_unref(pkt);
 		goto done;
 	}
 
-	net_pkt_frag_insert(pkt, frag);
-
-	if (!net_pkt_append_all(pkt, size, rx_buf, K_FOREVER)) {
-		LOG_ERR("no memory for network packet\n");
-		net_pkt_unref(pkt);
-		goto done;
+	if (VERBOSE_DEBUG) {
+		net_pkt_hexdump(pkt, ">");
 	}
 
 	netusb_recv(pkt);
@@ -349,20 +339,29 @@ static struct netusb_function ecm_function = {
 	.send_pkt = ecm_send,
 };
 
-static inline void ecm_status_interface(const u8_t *iface)
+static inline void ecm_status_interface(const uint8_t *desc)
 {
-	LOG_DBG("iface %u", *iface);
+	const struct usb_if_descriptor *if_desc = (void *)desc;
+	uint8_t iface_num = if_desc->bInterfaceNumber;
+	uint8_t alt_set = if_desc->bAlternateSetting;
+
+	LOG_DBG("iface %u alt_set %u", iface_num, if_desc->bAlternateSetting);
 
 	/* First interface is CDC Comm interface */
-	if (*iface != ecm_get_first_iface_number() + 1) {
+	if (iface_num != ecm_get_first_iface_number() + 1 || !alt_set) {
+		LOG_DBG("Skip iface_num %u alt_set %u", iface_num, alt_set);
 		return;
 	}
 
 	netusb_enable(&ecm_function);
 }
 
-static void ecm_do_cb(enum usb_dc_status_code status, const u8_t *param)
+static void ecm_status_cb(struct usb_cfg_data *cfg,
+			  enum usb_dc_status_code status,
+			  const uint8_t *param)
 {
+	ARG_UNUSED(cfg);
+
 	/* Check the USB status and do needed action if required */
 	switch (status) {
 	case USB_DC_DISCONNECTED:
@@ -394,25 +393,10 @@ static void ecm_do_cb(enum usb_dc_status_code status, const u8_t *param)
 	}
 }
 
-#ifdef CONFIG_USB_COMPOSITE_DEVICE
-static void ecm_status_composite_cb(struct usb_cfg_data *cfg,
-				    enum usb_dc_status_code status,
-				    const u8_t *param)
-{
-	ARG_UNUSED(cfg);
-	ecm_do_cb(status, param);
-}
-#else
-static void ecm_status_cb(enum usb_dc_status_code status, const u8_t *param)
-{
-	ecm_do_cb(status, param);
-}
-#endif
-
 struct usb_cdc_ecm_mac_descr {
-	u8_t bLength;
-	u8_t bDescriptorType;
-	u8_t bString[USB_BSTRING_LENGTH(CONFIG_USB_DEVICE_NETWORK_ECM_MAC)];
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	uint8_t bString[USB_BSTRING_LENGTH(CONFIG_USB_DEVICE_NETWORK_ECM_MAC)];
 } __packed;
 
 USBD_STRING_DESCR_DEFINE(primary) struct usb_cdc_ecm_mac_descr utf16le_mac = {
@@ -423,7 +407,7 @@ USBD_STRING_DESCR_DEFINE(primary) struct usb_cdc_ecm_mac_descr utf16le_mac = {
 };
 
 static void ecm_interface_config(struct usb_desc_header *head,
-				 u8_t bInterfaceNumber)
+				 uint8_t bInterfaceNumber)
 {
 	int idx = usb_get_str_descriptor_idx(&utf16le_mac);
 
@@ -444,20 +428,15 @@ static void ecm_interface_config(struct usb_desc_header *head,
 #endif
 }
 
-USBD_CFG_DATA_DEFINE(netusb) struct usb_cfg_data netusb_config = {
+USBD_CFG_DATA_DEFINE(primary, netusb) struct usb_cfg_data netusb_config = {
 	.usb_device_description = NULL,
 	.interface_config = ecm_interface_config,
 	.interface_descriptor = &cdc_ecm_cfg.if0,
-#ifdef CONFIG_USB_COMPOSITE_DEVICE
-	.cb_usb_status_composite = ecm_status_composite_cb,
-#else
 	.cb_usb_status = ecm_status_cb,
-#endif
 	.interface = {
 		.class_handler = ecm_class_handler,
 		.custom_handler = NULL,
 		.vendor_handler = NULL,
-		.payload_data = NULL,
 	},
 	.num_endpoints = ARRAY_SIZE(ecm_ep_data),
 	.endpoint = ecm_ep_data,

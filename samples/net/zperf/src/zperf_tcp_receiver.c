@@ -12,7 +12,7 @@ LOG_MODULE_DECLARE(net_zperf_sample, LOG_LEVEL_DBG);
 #include <linker/sections.h>
 #include <toolchain.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <net/net_core.h>
 #include <net/net_ip.h>
@@ -30,6 +30,8 @@ LOG_MODULE_DECLARE(net_zperf_sample, LOG_LEVEL_DBG);
 static struct sockaddr_in6 *in6_addr_my;
 static struct sockaddr_in *in4_addr_my;
 
+const struct shell *tcp_shell;
+
 static void tcp_received(struct net_context *context,
 			 struct net_pkt *pkt,
 			 union net_ip_header *ip_hdr,
@@ -37,48 +39,55 @@ static void tcp_received(struct net_context *context,
 			 int status,
 			 void *user_data)
 {
-	const struct shell *shell = user_data;
+	const struct shell *shell = tcp_shell;
 	struct session *session;
-	u32_t time;
+	int64_t time;
 
-	if (!pkt) {
+	if (!shell) {
+		printk("Shell is not set!\n");
 		return;
 	}
 
-	time = k_cycle_get_32();
+	time = k_uptime_ticks();
 
-	session = get_session(pkt, SESSION_TCP);
+	session = get_tcp_session(context);
 	if (!session) {
 		shell_fprintf(shell, SHELL_WARNING, "Cannot get a session!\n");
 		return;
 	}
 
 	switch (session->state) {
-	case STATE_NULL:
 	case STATE_COMPLETED:
-		shell_fprintf(shell, SHELL_NORMAL, "New session started\n");
+		break;
+	case STATE_NULL:
+		shell_fprintf(shell, SHELL_NORMAL,
+			      "New TCP session started\n");
 		zperf_reset_session_stats(session);
-		session->start_time = k_cycle_get_32();
+		session->start_time = k_uptime_ticks();
 		session->state = STATE_ONGOING;
-		/* fall through */
+		__fallthrough;
 	case STATE_ONGOING:
 		session->counter++;
-		session->length += net_pkt_appdatalen(pkt);
 
-		if (status == 0) { /* EOF */
-			u32_t rate_in_kbps;
-			u32_t duration = HW_CYCLES_TO_USEC(
-				time_delta(session->start_time, time));
+		if (pkt) {
+			session->length += net_pkt_remaining_data(pkt);
+		}
+
+		if (pkt == NULL && status == 0) { /* EOF */
+			uint32_t rate_in_kbps;
+			uint32_t duration;
+
+			duration = k_ticks_to_us_ceil32(time -
+							session->start_time);
 
 			session->state = STATE_COMPLETED;
 
 			/* Compute baud rate */
-			if (duration != 0) {
-				rate_in_kbps = (u32_t)
-					(((u64_t)session->length *
-					  (u64_t)8 *
-					  (u64_t)USEC_PER_SEC) /
-					 ((u64_t)duration * 1024));
+			if (duration != 0U) {
+				rate_in_kbps = (uint32_t)
+					((session->length * 8ULL *
+					  (uint64_t)USEC_PER_SEC) /
+					 ((uint64_t)duration * 1024ULL));
 			} else {
 				rate_in_kbps = 0U;
 			}
@@ -94,6 +103,11 @@ static void tcp_received(struct net_context *context,
 			shell_fprintf(shell, SHELL_NORMAL, " rate:\t\t\t");
 			print_number(shell, rate_in_kbps, KBPS, KBPS_UNIT);
 			shell_fprintf(shell, SHELL_NORMAL, "\n");
+
+			zperf_tcp_stopped();
+
+			net_context_unref(context);
+			session->state = STATE_NULL;
 		}
 		break;
 	case STATE_LAST_PACKET_RECEIVED:
@@ -102,7 +116,9 @@ static void tcp_received(struct net_context *context,
 		shell_fprintf(shell, SHELL_WARNING, "Unsupported case\n");
 	}
 
-	net_pkt_unref(pkt);
+	if (pkt) {
+		net_pkt_unref(pkt);
+	}
 }
 
 static void tcp_accepted(struct net_context *context,
@@ -124,11 +140,19 @@ static void tcp_accepted(struct net_context *context,
 
 void zperf_tcp_receiver_init(const struct shell *shell, int port)
 {
+	static bool init_done;
 	struct net_context *context4 = NULL;
 	struct net_context *context6 = NULL;
 	const struct in_addr *in4_addr = NULL;
 	const struct in6_addr *in6_addr = NULL;
 	int ret;
+
+	if (init_done) {
+		zperf_tcp_started();
+		return;
+	}
+
+	tcp_shell = shell;
 
 	if (IS_ENABLED(CONFIG_NET_IPV6)) {
 		in6_addr_my = zperf_get_sin6();
@@ -154,9 +178,10 @@ void zperf_tcp_receiver_init(const struct shell *shell, int port)
 			if (ret < 0) {
 				shell_fprintf(shell, SHELL_WARNING,
 					      "Unable to set IPv4\n");
-				return;
+				goto use_existing_ipv4;
 			}
 		} else {
+		use_existing_ipv4:
 			/* Use existing IP */
 			in4_addr = zperf_get_default_if_in4_addr();
 			if (!in4_addr) {
@@ -191,9 +216,10 @@ void zperf_tcp_receiver_init(const struct shell *shell, int port)
 			if (ret < 0) {
 				shell_fprintf(shell, SHELL_WARNING,
 					      "Unable to set IPv6\n");
-				return;
+				goto use_existing_ipv6;
 			}
 		} else {
+		use_existing_ipv6:
 			/* Use existing IP */
 			in6_addr = zperf_get_default_if_in6_addr();
 			if (!in6_addr) {
@@ -269,4 +295,7 @@ void zperf_tcp_receiver_init(const struct shell *shell, int port)
 
 	shell_fprintf(shell, SHELL_NORMAL,
 		      "Listening on port %d\n", port);
+
+	zperf_tcp_started();
+	init_done = true;
 }

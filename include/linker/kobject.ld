@@ -5,6 +5,7 @@
  */
 
 #ifdef CONFIG_USERSPACE
+	z_kobject_data_begin = .;
 	/* Constraints:
          *
          * - changes to the size of this section between build phases
@@ -21,7 +22,7 @@
 	 * *and* the specific memory addresses being hashed. It is not something
 	 * that can be predicted without actually building and compling it.
          */
-	SECTION_DATA_PROLOGUE(kobject_data, (OPTIONAL),)
+	SECTION_DATA_PROLOGUE(kobject_data,,)
 	{
 	*(".kobject_data.data*")
 
@@ -39,5 +40,13 @@
 	*(".kobject_data.rodata*")
 #endif
         } GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
-#endif /* CONFIG_USERSPACE */
 
+#ifdef CONFIG_GEN_PRIV_STACKS
+	SECTION_DATA_PROLOGUE(priv_stacks_noinit,,)
+	{
+	z_priv_stacks_ram_start = .;
+	*(".priv_stacks.noinit")
+	z_priv_stacks_ram_end = .;
+	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+#endif /* CONFIG_GEN_PRIV_STACKS */
+#endif /* CONFIG_USERSPACE */

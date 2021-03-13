@@ -1,14 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+
 cmake_minimum_required(VERSION 3.13.1)
 
-macro(set_conf_file)
-  if(EXISTS               ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.conf)
-    set(CONF_FILE "prj_base.conf ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.conf")
-  else()
-    set(CONF_FILE "prj_virtual.conf")
-  endif()
-endmacro()
-
-include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(i2c_slave_api)
 
 add_subdirectory(common)

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: BSD-4-Clause-UC */
+
 /*
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -58,17 +60,21 @@ unsigned long strtoul(const char *nptr, char **endptr, register int base)
 	if (c == '-') {
 		neg = 1;
 		c = *s++;
-	} else if (c == '+')
+	} else if (c == '+') {
 		c = *s++;
+	}
+
 	if ((base == 0 || base == 16) &&
 	    c == '0' && (*s == 'x' || *s == 'X')) {
 		c = s[1];
 		s += 2;
 		base = 16;
 	}
+
 	if (base == 0) {
 		base = c == '0' ? 8 : 10;
 	}
+
 	cutoff = (unsigned long)ULONG_MAX / (unsigned long)base;
 	cutlim = (unsigned long)ULONG_MAX % (unsigned long)base;
 	for (acc = 0, any = 0;; c = *s++) {

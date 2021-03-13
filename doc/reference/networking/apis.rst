@@ -14,4 +14,7 @@ Network APIs
    net_timeout.rst
    net_context.rst
    promiscuous.rst
+   sntp.rst
+   socks5.rst
    trickle.rst
+   websocket.rst

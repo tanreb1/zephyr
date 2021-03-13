@@ -63,14 +63,14 @@ Five seconds of acquisition at a 16KHz sampling rate yields 80,000 16-bit sample
 The microphone PDM requested clock should lead the MP34DT05 driver to select an
 oversampling/decimation factor equal to 128, resulting in a 2.048MHz bit clock.
 
-See pcm and pdm configuration in file :file:`samples/boards/96b_argonkey/microphone/src/main.c`.
+See pcm and pdm configuration in file :zephyr_file:`samples/boards/96b_argonkey/microphone/src/main.c`.
 
 .. note:: It is possible to change the AUDIO_FREQ to 32000 acquiring only 2500 ms. In this
    case the oversampling/decimation factor will be 64.
 
 At the end of the acquisition the PCM data will be printed on the terminal
 emulator in either binary or ASCII format. The output is controlled by
-following macro, off by default, in :file:`samples/boards/96b_argonkey/microphone/src/main.c`:
+following macro, off by default, in :zephyr_file:`samples/boards/96b_argonkey/microphone/src/main.c`:
 
 * :c:macro:`PCM_OUTPUT_IN_ASCII`
 
@@ -84,6 +84,10 @@ characters 'cooked' out.
 
    stty -F /dev/ttyUSB0 115200 raw
    cat /dev/ttyUSB0 > /tmp/sound.raw
+
+.. note:: The "cat /dev/ttyUSB0 > /tmp/sound.raw" command should be launched after the audio
+   acquisition starts (after green led glows) to avoid initial boot messages to enter in the file,
+   and before audio acquisition ends (before red led glows).
 
 .. note:: In case the character 0x0a is interpreted as NL and an 0x0d (CR) is added,
    you may need to remove it::

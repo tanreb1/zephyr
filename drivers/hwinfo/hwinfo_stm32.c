@@ -5,27 +5,22 @@
  */
 
 #include <soc.h>
-#include <hwinfo.h>
+#include <stm32_ll_utils.h>
+#include <drivers/hwinfo.h>
 #include <string.h>
-
-#if !defined(CONFIG_SOC_SERIES_STM32F0X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F3X) && \
-	!defined(CONFIG_SOC_SERIES_STM32L4X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F7X)
-#error ID only available on STM32F0, STM32F3, STM32L4 and STM32F7 series
-#endif
+#include <sys/byteorder.h>
 
 struct stm32_uid {
-	u32_t id[3];
+	uint32_t id[3];
 };
 
-ssize_t _impl_hwinfo_get_device_id(u8_t *buffer, size_t length)
+ssize_t z_impl_hwinfo_get_device_id(uint8_t *buffer, size_t length)
 {
 	struct stm32_uid dev_id;
 
-	dev_id.id[0] = HAL_GetUIDw0();
-	dev_id.id[1] = HAL_GetUIDw1();
-	dev_id.id[2] = HAL_GetUIDw2();
+	dev_id.id[0] = sys_cpu_to_be32(LL_GetUID_Word2());
+	dev_id.id[1] = sys_cpu_to_be32(LL_GetUID_Word1());
+	dev_id.id[2] = sys_cpu_to_be32(LL_GetUID_Word0());
 
 	if (length > sizeof(dev_id.id)) {
 		length = sizeof(dev_id.id);

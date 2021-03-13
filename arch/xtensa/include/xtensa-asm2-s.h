@@ -110,6 +110,16 @@
 	rsr.LCOUNT a0
 	s32i a0, a1, BSA_LCOUNT_OFF
 #endif
+	rsr.exccause a0
+	s32i a0, a1, BSA_EXCCAUSE_OFF
+#if XCHAL_HAVE_S32C1I
+	rsr.SCOMPARE1 a0
+	s32i a0, a1, BSA_SCOMPARE1_OFF
+#endif
+#if XCHAL_HAVE_THREADPTR && defined(CONFIG_THREAD_LOCAL_STORAGE)
+	rur.THREADPTR a0
+	s32i a0, a1, BSA_THREADPTR_OFF
+#endif
 .endm
 
 /*
@@ -184,6 +194,7 @@
 
 	/* Recover the interrupted SP from the BSA */
 	l32i a1, a1, 0
+	l32i a0, a1, BSA_A0_OFF
 	addi a1, a1, BASE_SAVE_AREA_SIZE
 
 	call4 _xstack_call0_\@
@@ -291,6 +302,12 @@ _switch_stacks_\@:
 _do_call_\@:
 	CROSS_STACK_CALL
 
+	/* Mask interrupts (which have been unmasked during the handler
+	 * execution) while we muck with the windows and decrement the nested
+	 * count.  The restore will unmask them correctly.
+	 */
+	rsil a0, XCHAL_NMILEVEL
+
 	/* Decrement nest count */
 	rsr.\SR a3
 	l32i a0, a3, \NEST_OFF
@@ -303,16 +320,18 @@ _do_call_\@:
 	 * register spill before restoring, for obvious reasons.
 	 * Remember to restore the A1 stack pointer as it existed at
 	 * interrupt time so the caller of the interrupted function
-	 * spills to the right place.  Also mask interrupts (which
-	 * have been unmasked during the handler execution) while we
-	 * muck with the windows.  The restore will unmask them
-	 * correctly.
+	 * spills to the right place.
 	 */
 	beq a6, a1, _restore_\@
-	rsil a0, XCHAL_NMILEVEL
 	l32i a1, a1, 0
+	l32i a0, a1, BSA_A0_OFF
 	addi a1, a1, BASE_SAVE_AREA_SIZE
+#ifndef CONFIG_KERNEL_COHERENCE
+	/* When using coherence, the registers of the interrupted
+	 * context got spilled upstream in arch_cohere_stacks()
+	 */
 	SPILL_ALL_WINDOWS
+#endif
 	mov a1, a6
 
 _restore_\@:

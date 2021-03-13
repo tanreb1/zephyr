@@ -70,7 +70,7 @@ Building Sample Applications
 
 You can try many of the sample applications or tests, but let us discuss
 the one called :ref:`hello_world`.
-It is found in :file:`$ZEPHYR_BASE/samples/hello_world`.
+It is found in :zephyr_file:`samples/hello_world`.
 
 Configuring
 -----------
@@ -152,8 +152,7 @@ console, from the build directory containing the output :file:`zephyr.elf`.
 .. code-block:: console
 
    $ cd <my app>
-   $ $ZEPHYR_SDK_INSTALL_DIR/sysroots/x86_64-pokysdk-linux/usr/bin/ \
-      arc-zephyr-elf/arc-zephyr-elf-gdb zephyr.elf
+   $ $ZEPHYR_SDK_INSTALL_DIR/arc-zephyr-elf/bin/arc-zephyr-elf-gdb zephyr.elf
    (gdb) target remote localhost:3333
    (gdb) load
    (gdb) b main

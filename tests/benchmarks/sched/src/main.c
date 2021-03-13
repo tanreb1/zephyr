@@ -5,7 +5,7 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <wait_q.h>
 #include <ksched.h>
 
@@ -13,29 +13,20 @@
  * of specific low level scheduling primitives independent of overhead
  * from application or API abstractions.  It works very simply: a main
  * thread creates a "partner" thread at a higher priority, the partner
- * then sleeps using _pend_curr_irqlock().  From this initial
+ * then sleeps using z_pend_curr_irqlock().  From this initial
  * state:
  *
- * 1. The main thread calls _unpend_first_thread()
- * 2. The main thread calls _ready_thread()
+ * 1. The main thread calls z_unpend_first_thread()
+ * 2. The main thread calls z_ready_thread()
  * 3. The main thread calls k_yield()
  *    (the kernel switches to the partner thread)
- * 4. The partner thread then runs and calls _pend_curr_irqlock() again
+ * 4. The partner thread then runs and calls z_pend_curr_irqlock() again
  *    (the kernel switches to the main thread)
  * 5. The main thread returns from k_yield()
  *
  * It then iterates this many times, reporting timestamp latencies
  * between each numbered step and for the whole cycle, and a running
  * average for all cycles run.
- *
- * Note that because this involves no timer interaction (except, on
- * some architectures, k_cycle_get_32()), it works correctly when run
- * in qemu using the -icount argument, which can produce 100%
- * deterministic behavior (not cycle-exact hardware simulation, but
- * exactly N instructions per simulated nanosecond).  You can enable
- * for "make run" using an environment variable:
- *
- * export QEMU_EXTRA_FLAGS="-icount shift=0,align=off,sleep=off"
  */
 
 #define N_RUNS 1000
@@ -56,11 +47,11 @@ enum {
 	NUM_STAMP_STATES
 };
 
-u32_t stamps[NUM_STAMP_STATES];
+uint32_t stamps[NUM_STAMP_STATES];
 
 static inline int _stamp(int state)
 {
-	u32_t t;
+	uint32_t t;
 
 	/* In theory the TSC has much lower overhead and higher
 	 * precision.  In practice it's VERY jittery in recent qemu
@@ -90,14 +81,14 @@ static void partner_fn(void *arg1, void *arg2, void *arg3)
 	while (true) {
 		unsigned int key = irq_lock();
 
-		_pend_curr_irqlock(key, &waitq, K_FOREVER);
+		z_pend_curr_irqlock(key, &waitq, K_FOREVER);
 		stamp(PARTNER_AWAKE_PENDING);
 	}
 }
 
 void main(void)
 {
-	_waitq_init(&waitq);
+	z_waitq_init(&waitq);
 
 	int main_prio = k_thread_priority_get(k_current_get());
 	int partner_prio = main_prio - 1;
@@ -105,22 +96,22 @@ void main(void)
 	k_tid_t th = k_thread_create(&partner_thread, partner_stack,
 				     K_THREAD_STACK_SIZEOF(partner_stack),
 				     partner_fn, NULL, NULL, NULL,
-				     partner_prio, 0, 0);
+				     partner_prio, 0, K_NO_WAIT);
 
 	/* Let it start running and pend */
-	k_sleep(100);
+	k_sleep(K_MSEC(100));
 
-	u64_t tot = 0;
-	u32_t runs = 0;
+	uint64_t tot = 0U;
+	uint32_t runs = 0U;
 
 	for (int i = 0; i < N_RUNS + N_SETTLE; i++) {
 		stamp(UNPENDING);
-		_unpend_first_thread(&waitq);
+		z_unpend_first_thread(&waitq);
 		stamp(UNPENDED_READYING);
-		_ready_thread(th);
+		z_ready_thread(th);
 		stamp(READIED_YIELDING);
 
-		/* _ready_thread() does not reschedule, so this is
+		/* z_ready_thread() does not reschedule, so this is
 		 * guaranteed to be the point where we will yield to
 		 * the new thread, which (being higher priority) will
 		 * run immediately, and we'll wake up synchronously as
@@ -129,7 +120,7 @@ void main(void)
 		k_yield();
 		stamp(YIELDED);
 
-		u32_t avg, whole = stamps[4] - stamps[0];
+		uint32_t avg, whole = stamps[4] - stamps[0];
 
 		if (++runs > N_SETTLE) {
 			/* Only compute averages after the first ~10
@@ -140,8 +131,8 @@ void main(void)
 			tot += whole;
 			avg = tot / (runs - 10);
 		} else {
-			tot = 0;
-			avg = 0;
+			tot = 0U;
+			avg = 0U;
 		}
 
 		/* For reference, an unmodified HEAD on qemu_x86 with

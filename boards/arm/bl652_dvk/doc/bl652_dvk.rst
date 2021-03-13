@@ -1,13 +1,13 @@
 .. _bl652_dvk:
 
-BL652 DVK
-##############
+Laird Connectivity BL652 DVK
+############################
 
 Overview
 ********
 
 The BL652 Development Kit hardware provides
-support for the Laird BL652 module powered by a Nordic Semiconductor nRF52832 ARM Cortex-M4F CPU.
+support for the Laird Connectivity BL652 module powered by a Nordic Semiconductor nRF52832 ARM Cortex-M4F CPU.
 
 This development kit has the following features:
 
@@ -261,7 +261,8 @@ the board are working properly with Zephyr:
 * :ref:`button-sample`
 
 You can build and flash the examples to make sure Zephyr is running correctly on
-your board. The button and LED definitions can be found in :file:`boards/arm/bl652_dvk/bl652_dvk.dts`.
+your board. The button and LED definitions can be found in
+:zephyr_file:`boards/arm/bl652_dvk/bl652_dvk.dts`.
 
 References
 **********
@@ -269,4 +270,3 @@ References
 .. target-notes::
 
 .. _BL652 Module Website: https://connectivity.lairdtech.com/wireless-modules/bluetooth-modules/bluetooth-5-modules/bl652-series-bluetooth-v5-nfc
-

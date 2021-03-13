@@ -19,22 +19,17 @@
 extern "C" {
 #endif
 
-#ifdef _ASMLANGUAGE
-#else
-/**
- * @brief Exception Stack Frame
- *
- * A pointer to an "exception stack frame" (ESF) is passed as an argument
- * to exception handlers registered via nanoCpuExcConnect().
- */
-struct __esf {
-	/* XXX - not finished yet */
-	sys_define_gpr_with_alias(a1, sp);
-	u32_t pc;
-};
+#ifndef _ASMLANGUAGE
 
-typedef struct __esf NANO_ESF;
-extern const NANO_ESF _default_esf;
+/* Xtensa uses a variable length stack frame depending on how many
+ * register windows are in use.  This isn't a struct type, it just
+ * matches the register/stack-unit width.
+ */
+typedef int z_arch_esf_t;
+
+void z_xtensa_dump_stack(const z_arch_esf_t *stack);
+char *z_xtensa_exccause(unsigned int cause_code);
+
 #endif
 
 #ifdef __cplusplus

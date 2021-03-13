@@ -1,4 +1,5 @@
 # Utility functions used in conf.py
+# SPDX-License-Identifier: Apache-2.0
 #
 # Copyright 2017 Espressif Systems (Shanghai) PTE LTD
 #
@@ -57,9 +58,8 @@ def copy_if_modified(src_path, dst_path):
         return
 
     src_path_len = len(src_path)
-    for root, dirs, files in os.walk(src_path):
+    for root, _, files in os.walk(src_path):
         for src_file_name in files:
             src_file_path = os.path.join(root, src_file_name)
             dst_file_path = os.path.join(dst_path + root[src_path_len:], src_file_name)
             copy_file_if_modified(src_file_path, dst_file_path)
-

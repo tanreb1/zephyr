@@ -51,22 +51,22 @@ static int lldp_find(struct ethernet_context *ctx, struct net_if *iface)
 	return -ENOENT;
 }
 
-static void lldp_submit_work(u32_t timeout)
+static void lldp_submit_work(uint32_t timeout)
 {
 	if (!k_delayed_work_remaining_get(&lldp_tx_timer) ||
 	    timeout < k_delayed_work_remaining_get(&lldp_tx_timer)) {
 		k_delayed_work_cancel(&lldp_tx_timer);
-		k_delayed_work_submit(&lldp_tx_timer, timeout);
+		k_delayed_work_submit(&lldp_tx_timer, K_MSEC(timeout));
 
 		NET_DBG("Next wakeup in %d ms",
 			k_delayed_work_remaining_get(&lldp_tx_timer));
 	}
 }
 
-static bool lldp_check_timeout(s64_t start, u32_t time, s64_t timeout)
+static bool lldp_check_timeout(int64_t start, uint32_t time, int64_t timeout)
 {
 	start += time;
-	start = abs(start);
+	start = llabs(start);
 
 	if (start > timeout) {
 		return false;
@@ -75,7 +75,7 @@ static bool lldp_check_timeout(s64_t start, u32_t time, s64_t timeout)
 	return true;
 }
 
-static bool lldp_timedout(struct ethernet_lldp *lldp, s64_t timeout)
+static bool lldp_timedout(struct ethernet_lldp *lldp, int64_t timeout)
 {
 	return lldp_check_timeout(lldp->tx_timer_start,
 				  lldp->tx_timer_timeout,
@@ -89,6 +89,7 @@ static int lldp_send(struct ethernet_lldp *lldp)
 	};
 	int ret = 0;
 	struct net_pkt *pkt;
+	size_t len;
 
 	if (!lldp->lldpdu) {
 		/* The ethernet driver has not set the lldpdu pointer */
@@ -97,23 +98,54 @@ static int lldp_send(struct ethernet_lldp *lldp)
 		goto out;
 	}
 
-	pkt = net_pkt_alloc_with_buffer(lldp->iface, sizeof(struct net_lldpdu),
-					AF_UNSPEC, 0, BUF_ALLOC_TIMEOUT);
+	if (lldp->optional_du && lldp->optional_len) {
+		len = sizeof(struct net_lldpdu) + lldp->optional_len;
+	} else {
+		len = sizeof(struct net_lldpdu);
+	}
+
+	if (IS_ENABLED(CONFIG_NET_LLDP_END_LLDPDU_TLV_ENABLED)) {
+		len += sizeof(uint16_t);
+	}
+
+	pkt = net_pkt_alloc_with_buffer(lldp->iface, len, AF_UNSPEC, 0,
+					BUF_ALLOC_TIMEOUT);
 	if (!pkt) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	if (net_pkt_write_new(pkt, (u8_t *)lldp->lldpdu,
-			       sizeof(struct net_lldpdu))) {
+	net_pkt_set_lldp(pkt, true);
+
+	ret = net_pkt_write(pkt, (uint8_t *)lldp->lldpdu,
+			    sizeof(struct net_lldpdu));
+	if (ret < 0) {
 		net_pkt_unref(pkt);
-		ret = -ENOMEM;
 		goto out;
+	}
+
+	if (lldp->optional_du && lldp->optional_len) {
+		ret = net_pkt_write(pkt, (uint8_t *)lldp->optional_du,
+				    lldp->optional_len);
+		if (ret < 0) {
+			net_pkt_unref(pkt);
+			goto out;
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_NET_LLDP_END_LLDPDU_TLV_ENABLED)) {
+		uint16_t tlv_end = htons(NET_LLDP_END_LLDPDU_VALUE);
+
+		ret = net_pkt_write(pkt, (uint8_t *)&tlv_end, sizeof(tlv_end));
+		if (ret < 0) {
+			net_pkt_unref(pkt);
+			goto out;
+		}
 	}
 
 	net_pkt_lladdr_src(pkt)->addr = net_if_get_link_addr(lldp->iface)->addr;
 	net_pkt_lladdr_src(pkt)->len = sizeof(struct net_eth_addr);
-	net_pkt_lladdr_dst(pkt)->addr = (u8_t *)lldp_multicast_eth_addr.addr;
+	net_pkt_lladdr_dst(pkt)->addr = (uint8_t *)lldp_multicast_eth_addr.addr;
 	net_pkt_lladdr_dst(pkt)->len = sizeof(struct net_eth_addr);
 
 	if (net_if_send_data(lldp->iface, pkt) == NET_DROP) {
@@ -127,9 +159,9 @@ out:
 	return ret;
 }
 
-static u32_t lldp_manage_timeouts(struct ethernet_lldp *lldp, s64_t timeout)
+static uint32_t lldp_manage_timeouts(struct ethernet_lldp *lldp, int64_t timeout)
 {
-	s32_t next_timeout;
+	int32_t next_timeout;
 
 	if (lldp_timedout(lldp, timeout)) {
 		lldp_send(lldp);
@@ -143,14 +175,14 @@ static u32_t lldp_manage_timeouts(struct ethernet_lldp *lldp, s64_t timeout)
 
 static void lldp_tx_timeout(struct k_work *work)
 {
-	u32_t timeout_update = UINT32_MAX - 1;
-	s64_t timeout = k_uptime_get();
+	uint32_t timeout_update = UINT32_MAX - 1;
+	int64_t timeout = k_uptime_get();
 	struct ethernet_lldp *current, *next;
 
 	ARG_UNUSED(work);
 
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&lldp_ifaces, current, next, node) {
-		u32_t next_timeout;
+		uint32_t next_timeout;
 
 		next_timeout = lldp_manage_timeouts(current, timeout);
 		if (next_timeout < timeout_update) {
@@ -161,7 +193,7 @@ static void lldp_tx_timeout(struct k_work *work)
 	if (timeout_update < (UINT32_MAX - 1)) {
 		NET_DBG("Waiting for %u ms", timeout_update);
 
-		k_delayed_work_submit(&lldp_tx_timer, timeout_update);
+		k_delayed_work_submit(&lldp_tx_timer, K_MSEC(timeout_update));
 	}
 }
 
@@ -175,7 +207,7 @@ static void lldp_start_timer(struct ethernet_context *ctx,
 
 	ctx->lldp[slot].tx_timer_start = k_uptime_get();
 	ctx->lldp[slot].tx_timer_timeout =
-		K_SECONDS(CONFIG_NET_LLDP_TX_INTERVAL);
+				CONFIG_NET_LLDP_TX_INTERVAL * MSEC_PER_SEC;
 
 	lldp_submit_work(ctx->lldp[slot].tx_timer_timeout);
 }
@@ -193,7 +225,7 @@ static int lldp_check_iface(struct net_if *iface)
 	return 0;
 }
 
-static int lldp_start(struct net_if *iface, u32_t mgmt_event)
+static int lldp_start(struct net_if *iface, uint32_t mgmt_event)
 {
 	struct ethernet_context *ctx;
 	int ret, slot;
@@ -276,7 +308,7 @@ int net_lldp_register_callback(struct net_if *iface, net_lldp_recv_cb_t cb)
 }
 
 static void iface_event_handler(struct net_mgmt_event_callback *cb,
-				u32_t mgmt_event, struct net_if *iface)
+				uint32_t mgmt_event, struct net_if *iface)
 {
 	lldp_start(iface, mgmt_event);
 }
@@ -287,7 +319,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	 * immediately. If the interface is not ethernet one, then
 	 * lldp_start() will return immediately.
 	 */
-	if (atomic_test_bit(iface->if_dev->flags, NET_IF_UP)) {
+	if (net_if_flag_is_set(iface, NET_IF_UP)) {
 		lldp_start(iface, NET_EVENT_IF_UP);
 	}
 }
@@ -305,6 +337,53 @@ int net_lldp_config(struct net_if *iface, const struct net_lldpdu *lldpdu)
 	ctx->lldp[i].lldpdu = lldpdu;
 
 	return 0;
+}
+
+int net_lldp_config_optional(struct net_if *iface, const uint8_t *tlv, size_t len)
+{
+	struct ethernet_context *ctx = net_if_l2_data(iface);
+	int i;
+
+	i = lldp_find(ctx, iface);
+	if (i < 0) {
+		return i;
+	}
+
+	ctx->lldp[i].optional_du = tlv;
+	ctx->lldp[i].optional_len = len;
+
+	return 0;
+}
+
+static const struct net_lldpdu lldpdu = {
+	.chassis_id = {
+		.type_length = htons((LLDP_TLV_CHASSIS_ID << 9) |
+			NET_LLDP_CHASSIS_ID_TLV_LEN),
+		.subtype = CONFIG_NET_LLDP_CHASSIS_ID_SUBTYPE,
+		.value = NET_LLDP_CHASSIS_ID_VALUE
+	},
+	.port_id = {
+		.type_length = htons((LLDP_TLV_PORT_ID << 9) |
+			NET_LLDP_PORT_ID_TLV_LEN),
+		.subtype = CONFIG_NET_LLDP_PORT_ID_SUBTYPE,
+		.value = NET_LLDP_PORT_ID_VALUE
+	},
+	.ttl = {
+		.type_length = htons((LLDP_TLV_TTL << 9) |
+			NET_LLDP_TTL_TLV_LEN),
+		.ttl = htons(NET_LLDP_TTL)
+	},
+};
+
+int net_lldp_set_lldpdu(struct net_if *iface)
+{
+	return net_lldp_config(iface, &lldpdu);
+}
+
+void net_lldp_unset_lldpdu(struct net_if *iface)
+{
+	net_lldp_config(iface, NULL);
+	net_lldp_config_optional(iface, NULL, 0);
 }
 
 void net_lldp_init(void)

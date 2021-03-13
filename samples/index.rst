@@ -15,15 +15,16 @@ Samples and Demos
    net/net.rst
    bluetooth/bluetooth.rst
    sensor/*
+   arch/*
    boards/*
-   mpu/*
    drivers/drivers.rst
    application_development/*
-   display/*
    shields/*
    portability/*
-   gui/*
+   posix/*
+   kernel/*
+   tfm_integration/tfm_integration.rst
 
 .. comment
    To add a new sample document, please use the template available under
-   :file:`doc/templates/sample.tmpl`
+   ``doc/templates/sample.tmpl``

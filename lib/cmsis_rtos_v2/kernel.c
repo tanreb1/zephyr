@@ -6,24 +6,26 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <kernel_structs.h>
-#include <ksched.h>
+#include <kernel.h>
 #include <cmsis_os2.h>
 
-extern u32_t z_tick_get_32(void);
+extern uint32_t z_tick_get_32(void);
 
 /**
  * @brief Get RTOS Kernel Information.
  */
 osStatus_t osKernelGetInfo(osVersion_t *version, char *id_buf, uint32_t id_size)
 {
+	uint32_t ver = sys_kernel_version_get();
+
 	if (version != NULL) {
-		version->api = sys_kernel_version_get();
-		version->kernel = sys_kernel_version_get();
+		version->api = ver;
+		version->kernel = ver;
 	}
 
-	if (id_buf != NULL) {
-		snprintf(id_buf, id_size, "Zephyr V%2d.%2d.%2d",
+	if ((id_buf != NULL) && (version != NULL)) {
+		snprintf(id_buf, id_size,
+			 "Zephyr V%2"PRIu32".%2"PRIu32".%2"PRIu32,
 			 SYS_KERNEL_VER_MAJOR(version->kernel),
 			 SYS_KERNEL_VER_MINOR(version->kernel),
 			 SYS_KERNEL_VER_PATCHLEVEL(version->kernel));
@@ -123,7 +125,7 @@ osStatus_t osDelay(uint32_t ticks)
 		return osErrorISR;
 	}
 
-	k_sleep(__ticks_to_ms(ticks));
+	k_sleep(K_TICKS(ticks));
 
 	return osOK;
 }
@@ -133,14 +135,14 @@ osStatus_t osDelay(uint32_t ticks)
  */
 osStatus_t osDelayUntil(uint32_t ticks)
 {
-	u32_t ticks_elapsed;
+	uint32_t ticks_elapsed;
 
 	if (k_is_in_isr()) {
 		return osErrorISR;
 	}
 
 	ticks_elapsed = osKernelGetTickCount();
-	k_sleep(__ticks_to_ms(ticks - ticks_elapsed));
+	k_sleep(K_TICKS(ticks - ticks_elapsed));
 
 	return osOK;
 }

@@ -14,7 +14,7 @@ Requirements
 
 This project requires an USB device driver. Currently, the USB DFU
 class provided by the Zephyr project depends on DFU image manager and
-partition layout. Refer to :ref:`flash_partitions` for details about
+partition layout. Refer to :ref:`flash_map_api` for details about
 partition layout. You SoC must run MCUboot as the stage 1 bootloader.
 This sample is built as an application for the MCUboot bootloader.
 
@@ -40,7 +40,7 @@ details.)
            --header-size 0x200 \
            --align 8 \
            --version 1.2 \
-           --included-header \
+           --slot-size 0x60000 \
            ./zephyr/zephyr.bin \
            signed-zephyr.bin
 
@@ -52,7 +52,7 @@ Build and sign a second application image e.g. :ref:`hello_world`,
 which will be used as an image for the update.
 Do not forget to enable the required MCUboot Kconfig option (as described
 in :ref:`mcuboot`) by adding the following line to
-:file:`samples/hello_world/prj.conf`:
+:zephyr_file:`samples/hello_world/prj.conf`:
 
 .. code-block:: console
 

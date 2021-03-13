@@ -1,7 +1,7 @@
 .. _stm3210c_eval_board:
 
-STM3210C-EVAL
-#############
+ST STM3210C Evaluation
+######################
 
 Overview
 ********
@@ -83,7 +83,7 @@ The Zephyr stm3210c_eval board configuration supports the following hardware fea
 Other hardware features are not yet supported in this Zephyr port.
 
 The default configuration can be found in the defconfig file
-:file:`boards/arm/stm3210c_eval/stm3210c_eval_defconfig`.
+:zephyr_file:`boards/arm/stm3210c_eval/stm3210c_eval_defconfig`.
 
 Connections and IOs
 ===================

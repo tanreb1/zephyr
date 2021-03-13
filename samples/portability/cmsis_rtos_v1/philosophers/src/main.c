@@ -34,10 +34,10 @@
 #if defined(CONFIG_STDOUT_CONSOLE)
 #include <stdio.h>
 #else
-#include <misc/printk.h>
+#include <sys/printk.h>
 #endif
 
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 
 #include "phil_obj_abstract.h"
 
@@ -72,21 +72,10 @@ osSemaphoreId forks[NUM_PHIL];
 
 #define fork(x) (forks[x])
 
-#define STACK_SIZE 512
-
-/*
- * There are multiple threads doing printfs and they may conflict.
- * Therefore use puts() instead of printf().
- */
-#if defined(CONFIG_STDOUT_CONSOLE)
-#define PRINTF(...) { char output[256];	\
-		      sprintf(output, __VA_ARGS__); puts(output); }
-#else
-#define PRINTF(...) printk(__VA_ARGS__)
-#endif
+#define STACK_SIZE CONFIG_CMSIS_THREAD_MAX_STACK_SIZE
 
 #if DEBUG_PRINTF
-#define PR_DEBUG PRINTF
+#define PR_DEBUG printk
 #else
 #define PR_DEBUG(...)
 #endif
@@ -96,42 +85,42 @@ osSemaphoreId forks[NUM_PHIL];
 static void set_phil_state_pos(int id)
 {
 #if !DEBUG_PRINTF
-	PRINTF("\x1b[%d;%dH", id + 1, 1);
+	printk("\x1b[%d;%dH", id + 1, 1);
 #endif
 }
 
 #include <stdarg.h>
-static void print_phil_state(int id, const char *fmt, s32_t delay)
+static void print_phil_state(int id, const char *fmt, int32_t delay)
 {
 	int prio = osThreadGetPriority(osThreadGetId());
 
 	set_phil_state_pos(id);
 
-	PRINTF("Philosopher %d [%s:%s%d] ",
+	printk("Philosopher %d [%s:%s%d] ",
 	       id, prio < 0 ? "C" : "P",
 	       prio < 0 ? "" : " ",
 	       prio);
 
 	if (delay) {
-		PRINTF(fmt, delay < 1000 ? " " : "", delay);
+		printk(fmt, delay < 1000 ? " " : "", delay);
 	} else {
-		PRINTF(fmt, "");
+		printk(fmt, "");
 	}
 
-	PRINTF("\n");
+	printk("\n");
 }
 
-static s32_t get_random_delay(int id, int period_in_ms)
+static int32_t get_random_delay(int id, int period_in_ms)
 {
 	/*
 	 * The random delay is unit-less, and is based on the philosopher's ID
 	 * and the current uptime to create some pseudo-randomness. It produces
 	 * a value between 0 and 31.
 	 */
-	s32_t delay = (k_uptime_get_32() / 100 * (id + 1)) & 0x1f;
+	int32_t delay = (k_uptime_get_32() / 100 * (id + 1)) & 0x1f;
 
 	/* add 1 to not generate a delay of 0 */
-	s32_t ms = (delay + 1) * period_in_ms;
+	int32_t ms = (delay + 1) * period_in_ms;
 
 	return ms;
 }
@@ -146,7 +135,7 @@ void philosopher(void const *id)
 	fork_t fork1;
 	fork_t fork2;
 
-	int my_id = (int)id;
+	int my_id = POINTER_TO_INT(id);
 
 	/* Djkstra's solution: always pick up the lowest numbered fork first */
 	if (is_last_philosopher(my_id)) {
@@ -158,7 +147,7 @@ void philosopher(void const *id)
 	}
 
 	while (1) {
-		s32_t delay;
+		int32_t delay;
 
 		print_phil_state(my_id, "       STARVING       ", 0);
 		take(fork1);
@@ -197,7 +186,7 @@ static void start_threads(void)
 
 	for (int i = 0; i < NUM_PHIL; i++) {
 		int prio = new_prio(i);
-		id = osThreadCreate(osThread(philosopher), (void *)i);
+		id = osThreadCreate(osThread(philosopher), INT_TO_POINTER(i));
 		osThreadSetPriority(id, prio);
 	}
 }
@@ -215,7 +204,7 @@ static void start_threads(void)
 static void display_demo_description(void)
 {
 #if !DEBUG_PRINTF
-	PRINTF(DEMO_DESCRIPTION);
+	printk(DEMO_DESCRIPTION);
 #endif
 }
 

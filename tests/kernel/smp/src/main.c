@@ -15,7 +15,7 @@
 #error SMP test requires at least two CPUs!
 #endif
 
-#define T2_STACK_SIZE 2048
+#define T2_STACK_SIZE (2048 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define STACK_SIZE (384 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define DELAY_US 50000
 #define TIMEOUT 1000
@@ -40,15 +40,38 @@ struct thread_info {
 	int priority;
 	int cpu_id;
 };
-static struct thread_info tinfo[THREADS_NUM];
+static volatile struct thread_info tinfo[THREADS_NUM];
 static struct k_thread tthread[THREADS_NUM];
 static K_THREAD_STACK_ARRAY_DEFINE(tstack, THREADS_NUM, STACK_SIZE);
 
-static int thread_started[THREADS_NUM - 1];
-static int pending;
+static volatile int thread_started[THREADS_NUM - 1];
+
+static int curr_cpu(void)
+{
+	unsigned int k = arch_irq_lock();
+	int ret = arch_curr_cpu()->id;
+
+	arch_irq_unlock(k);
+	return ret;
+}
+
 /**
  * @brief Tests for SMP
  * @defgroup kernel_smp_tests SMP Tests
+ * @ingroup all_tests
+ * @{
+ * @}
+ */
+
+/**
+ * @defgroup kernel_smp_integration_tests SMP Tests
+ * @ingroup all_tests
+ * @{
+ * @}
+ */
+
+/**
+ * @defgroup kernel_smp_module_tests SMP Tests
  * @ingroup all_tests
  * @{
  * @}
@@ -119,9 +142,9 @@ static void child_fn(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
-	int parent_cpu_id = (int)p1;
+	int parent_cpu_id = POINTER_TO_INT(p1);
 
-	zassert_true(parent_cpu_id != _arch_curr_cpu()->id,
+	zassert_true(parent_cpu_id != curr_cpu(),
 		     "Parent isn't on other core");
 
 	sync_count++;
@@ -139,12 +162,12 @@ static void child_fn(void *p1, void *p2, void *p3)
 void test_cpu_id_threads(void)
 {
 	/* Make sure idle thread runs on each core */
-	k_sleep(1000);
+	k_sleep(K_MSEC(1000));
 
-	int parent_cpu_id = _arch_curr_cpu()->id;
+	int parent_cpu_id = curr_cpu();
 
-	k_tid_t tid = k_thread_create(&t2, t2_stack, T2_STACK_SIZE,
-				      child_fn, (void *)parent_cpu_id, NULL,
+	k_tid_t tid = k_thread_create(&t2, t2_stack, T2_STACK_SIZE, child_fn,
+				      INT_TO_POINTER(parent_cpu_id), NULL,
 				      NULL, K_PRIO_PREEMPT(2), 0, K_NO_WAIT);
 
 	while (sync_count == -1) {
@@ -158,19 +181,30 @@ static void thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
-	int thread_num = (int)p1;
+	int thread_num = POINTER_TO_INT(p1);
 	int count = 0;
 
 	tinfo[thread_num].executed  = 1;
-	tinfo[thread_num].cpu_id = _arch_curr_cpu()->id;
+	tinfo[thread_num].cpu_id = curr_cpu();
 
 	while (count++ < 5) {
 		k_busy_wait(DELAY_US);
 	}
 }
 
-static void spawn_threads(int prio, int thread_num,
-			  int equal_prio, k_thread_entry_t thread_entry, int delay)
+static void spin_for_threads_exit(void)
+{
+	for (int i = 0; i < THREADS_NUM - 1; i++) {
+		volatile uint8_t *p = &tinfo[i].tid->base.thread_state;
+
+		while (!(*p & _THREAD_DEAD)) {
+		}
+	}
+	k_busy_wait(DELAY_US);
+}
+
+static void spawn_threads(int prio, int thread_num, int equal_prio,
+			k_thread_entry_t thread_entry, int delay)
 {
 	int i;
 
@@ -187,8 +221,9 @@ static void spawn_threads(int prio, int thread_num,
 		}
 		tinfo[i].tid = k_thread_create(&tthread[i], tstack[i],
 					       STACK_SIZE, thread_entry,
-					       (void *)i, NULL, NULL,
-					       tinfo[i].priority, 0, delay);
+					       INT_TO_POINTER(i), NULL, NULL,
+					       tinfo[i].priority, 0,
+					       K_MSEC(delay));
 		if (delay) {
 			/* Increase delay for each thread */
 			delay = delay + 10;
@@ -270,8 +305,7 @@ void test_preempt_resched_threads(void)
 	spawn_threads(K_PRIO_PREEMPT(10), THREADS_NUM, !EQUAL_PRIORITY,
 		      &thread_entry, THREAD_DELAY);
 
-	/* Wait for some time to let all threads run */
-	k_busy_wait(DELAY_US);
+	spin_for_threads_exit();
 
 	for (int i = 0; i < THREADS_NUM; i++) {
 		zassert_true(tinfo[i].executed == 1,
@@ -329,7 +363,7 @@ void test_sleep_threads(void)
 	spawn_threads(K_PRIO_COOP(10), THREADS_NUM, !EQUAL_PRIORITY,
 		      &thread_entry, !THREAD_DELAY);
 
-	k_sleep(TIMEOUT);
+	k_msleep(TIMEOUT);
 
 	for (int i = 0; i < THREADS_NUM; i++) {
 		zassert_true(tinfo[i].executed == 1,
@@ -344,15 +378,12 @@ static void thread_wakeup_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
-	int thread_num = (int)p1;
+	int thread_num = POINTER_TO_INT(p1);
 
 	thread_started[thread_num] = 1;
 
-	if (pending) {
-		k_sem_take(&sema, DELAY_US * 1000);
-	} else {
-		k_sleep(DELAY_US * 1000);
-	}
+	k_msleep(DELAY_US * 1000);
+
 	tinfo[thread_num].executed  = 1;
 }
 
@@ -360,10 +391,17 @@ static void wakeup_on_start_thread(int tnum)
 {
 	int threads_started = 0, i;
 
+	/* For each thread, spin waiting for it to first flag that
+	 * it's going to sleep, and then that it's actually blocked
+	 */
 	for (i = 0; i < tnum; i++) {
-		/* Give it some time to start */
-		k_busy_wait(DELAY_US);
+		while (thread_started[i] == 0) {
+		}
+		while (!z_is_thread_prevented_from_running(tinfo[i].tid)) {
+		}
+	}
 
+	for (i = 0; i < tnum; i++) {
 		if (thread_started[i] == 1 && threads_started <= tnum) {
 			threads_started++;
 			k_wakeup(tinfo[i].tid);
@@ -377,18 +415,17 @@ static void check_wokeup_threads(int tnum)
 {
 	int threads_woke_up = 0, i;
 
+	/* k_wakeup() isn't synchronous, give the other CPU time to
+	 * schedule them
+	 */
+	k_busy_wait(200000);
+
 	for (i = 0; i < tnum; i++) {
 		if (tinfo[i].executed == 1 && threads_woke_up <= tnum) {
 			threads_woke_up++;
 		}
 	}
-	if (pending) {
-		zassert_not_equal(threads_woke_up, tnum,
-				  "Pending thread woke up!");
-	} else {
-		zassert_equal(threads_woke_up, tnum,
-			      "Threads did not wakeup");
-	}
+	zassert_equal(threads_woke_up, tnum, "Threads did not wakeup");
 }
 
 /**
@@ -418,20 +455,173 @@ void test_wakeup_threads(void)
 	cleanup_resources();
 }
 
-/**
- * @brief Test wakeup() call on pending threads
- *
- * @ingroup kernel_smp_tests
- *
- * @details Spawn threads to run on remaining cores and
- * make them pend on a semaphore. Call wakeup() from
- * parent thread. Check if the threads have woken up
- */
-void test_wakeup_pending_threads(void)
+/* a thread for testing get current cpu */
+static void thread_get_cpu_entry(void *p1, void *p2, void *p3)
 {
-	pending = 1;
+	int bsp_id = *(int *)p1;
+	int cpu_id = -1;
 
-	test_wakeup_threads();
+	/* get current cpu number for running thread */
+	_cpu_t *curr_cpu = arch_curr_cpu();
+
+	/**TESTPOINT: call arch_curr_cpu() to get cpu struct */
+	zassert_true(curr_cpu != NULL,
+			"test failed to get current cpu.");
+
+	cpu_id = curr_cpu->id;
+
+	zassert_true(bsp_id != cpu_id,
+			"should not be the same with our BSP");
+
+	/* loop forever to ensure running on this CPU */
+	while (1) {
+		k_busy_wait(DELAY_US);
+	};
+}
+
+/**
+ * @brief Test get a pointer of CPU
+ *
+ * @ingroup kernel_smp_module_tests
+ *
+ * @details
+ * Test Objective:
+ * - To verify architecture layer provides a mechanism to return a pointer to the
+ *   current kernel CPU record of the running CPU.
+ *   We call arch_curr_cpu() and get it's member, both in main and spwaned thread
+ *   speratively, and compare them. They shall be different in SMP enviornment.
+ *
+ * Testing techniques:
+ * - Interface testing, function and block box testing,
+ *   dynamic analysis and testing,
+ *
+ * Prerequisite Conditions:
+ * - CONFIG_SMP=y, and the HW platform must support SMP.
+ *
+ * Input Specifications:
+ * - N/A
+ *
+ * Test Procedure:
+ * -# In main thread, call arch_curr_cpu() to get it's member "id",then store it
+ *  into a variable thread_id.
+ * -# Spawn a thread t2, and pass the stored thread_id to it, then call
+ *  k_busy_wait() 50us to wait for thread run and won't be swapped out.
+ * -# In thread t2, call arch_curr_cpu() to get pointer of current cpu data. Then
+ *  check if it not NULL.
+ * -# Store the member id via accessing pointer of current cpu data to var cpu_id.
+ * -# Check if cpu_id is not equaled to bsp_id that we pass into thread.
+ * -# Call k_busy_wait() and loop forever.
+ * -# In main thread, terminate the thread t2 before exit.
+ *
+ * Expected Test Result:
+ * - The pointer of current cpu data that we got from function call is correct.
+ *
+ * Pass/Fail Criteria:
+ * - Successful if the check of step 3,5 are all passed.
+ * - Failure if one of the check of step 3,5 is failed.
+ *
+ * Assumptions and Constraints:
+ * - This test using for the platform that support SMP, in our current scenario
+ *   , only x86_64, arc and xtensa supported.
+ *
+ * @see arch_curr_cpu()
+ */
+void test_get_cpu(void)
+{
+	k_tid_t thread_id;
+
+	/* get current cpu number */
+	int cpu_id = arch_curr_cpu()->id;
+
+	thread_id = k_thread_create(&t2, t2_stack, T2_STACK_SIZE,
+				      (k_thread_entry_t)thread_get_cpu_entry,
+				      &cpu_id, NULL, NULL,
+				      K_PRIO_COOP(2),
+				      K_INHERIT_PERMS, K_NO_WAIT);
+
+	k_busy_wait(DELAY_US);
+
+	k_thread_abort(thread_id);
+}
+
+#ifdef CONFIG_TRACE_SCHED_IPI
+/* global variable for testing send IPI */
+static volatile int sched_ipi_has_called;
+
+void z_trace_sched_ipi(void)
+{
+	sched_ipi_has_called++;
+}
+#endif
+
+/**
+ * @brief Test interprocessor interrupt
+ *
+ * @ingroup kernel_smp_integration_tests
+ *
+ * @details
+ * Test Objective:
+ * - To verify architecture layer provides a mechanism to issue an interprocessor
+ *   interrupt to all other CPUs in the system that calls the scheduler IPI.
+ *   We simply add a hook in z_sched_ipi(), in order to check if it has been
+ *   called once in another CPU except the caller, when arch_sched_ipi() is
+ *   called.
+ *
+ * Testing techniques:
+ * - Interface testing, function and block box testing,
+ *   dynamic analysis and testing
+ *
+ * Prerequisite Conditions:
+ * - CONFIG_SMP=y, and the HW platform must support SMP.
+ * - CONFIG_TRACE_SCHED_IPI=y was set.
+ *
+ * Input Specifications:
+ * - N/A
+ *
+ * Test Procedure:
+ * -# In main thread, given a global variable sched_ipi_has_called equaled zero.
+ * -# Call arch_sched_ipi() then sleep for 100ms.
+ * -# In z_sched_ipi() handler, increment the sched_ipi_has_called.
+ * -# In main thread, check the sched_ipi_has_called is not equaled to zero.
+ * -# Repeat step 1 to 4 for 3 times.
+ *
+ * Expected Test Result:
+ * - The pointer of current cpu data that we got from function call is correct.
+ *
+ * Pass/Fail Criteria:
+ * - Successful if the check of step 4 are all passed.
+ * - Failure if one of the check of step 4 is failed.
+ *
+ * Assumptions and Constraints:
+ * - This test using for the platform that support SMP, in our current scenario
+ *   , only x86_64 and arc supported.
+ *
+ * @see arch_sched_ipi()
+ */
+void test_smp_ipi(void)
+{
+#ifndef CONFIG_TRACE_SCHED_IPI
+	ztest_test_skip();
+#endif
+
+	TC_PRINT("cpu num=%d", CONFIG_MP_NUM_CPUS);
+
+	for (int i = 0; i < 3 ; i++) {
+		/* issue a sched ipi to tell other CPU to run thread */
+		sched_ipi_has_called = 0;
+		arch_sched_ipi();
+
+		/* Need to wait longer than we think, loaded CI
+		 * systems need to wait for host scheduling to run the
+		 * other CPU's thread.
+		 */
+		k_msleep(100);
+
+		/**TESTPOINT: check if enter our IPI interrupt handler */
+		zassert_true(sched_ipi_has_called != 0,
+				"did not receive IPI.(%d)",
+				sched_ipi_has_called);
+	}
 }
 
 void test_main(void)
@@ -440,7 +630,7 @@ void test_main(void)
 	 * thread from which they can exit correctly to run the main
 	 * test.
 	 */
-	k_sleep(1000);
+	k_sleep(K_MSEC(10));
 
 	ztest_test_suite(smp,
 			 ztest_unit_test(test_smp_coop_threads),
@@ -450,7 +640,8 @@ void test_main(void)
 			 ztest_unit_test(test_yield_threads),
 			 ztest_unit_test(test_sleep_threads),
 			 ztest_unit_test(test_wakeup_threads),
-			 ztest_unit_test(test_wakeup_pending_threads)
+			 ztest_unit_test(test_smp_ipi),
+			 ztest_unit_test(test_get_cpu)
 			 );
 	ztest_run_test_suite(smp);
 }

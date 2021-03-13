@@ -15,17 +15,7 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#include <misc/util.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* default system clock */
-
-#define SYSCLK_DEFAULT_IOSC_HZ MHZ(120)
-#define BUSCLK_DEFAULT_IOSC_HZ (SYSCLK_DEFAULT_IOSC_HZ / \
-				CONFIG_K64_BUS_CLOCK_DIVIDER)
+#include <sys/util.h>
 
 /* address bases */
 
@@ -34,14 +24,10 @@ extern "C" {
 #ifndef _ASMLANGUAGE
 
 #include <fsl_common.h>
-#include <device.h>
-#include <misc/util.h>
-#include <random/rand32.h>
+
+/* Add include for DTS generated information */
+#include <devicetree.h>
 
 #endif /* !_ASMLANGUAGE */
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _SOC__H_ */

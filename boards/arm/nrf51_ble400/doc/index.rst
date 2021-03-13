@@ -201,7 +201,8 @@ the board are working properly with Zephyr:
 - :ref:`96b_carbon_multi_thread_blinky`
 
 You can build and flash the examples to make sure Zephyr is running correctly on
-your board. The button and LED definitions can be found in :file:`boards/arm/nrf51_ble400/board.h`.
+your board. The button and LED definitions can be found in
+:zephyr_file:`boards/arm/nrf51_ble400/nrf51_ble400.dts`.
 
 References
 **********
@@ -209,7 +210,7 @@ References
 .. target-notes::
 
 .. _nRF51 DK website: https://www.nordicsemi.com/Software-and-Tools/Development-Kits/nRF51-DK
-.. _Nordic Semiconductor Documentation library: https://www.nordicsemi.com/DocLib
+.. _Nordic Semiconductor Infocenter: https://infocenter.nordicsemi.com
 .. _Waveshare Wiki BLE400: https://www.waveshare.com/wiki/BLE400
 .. _User manual: https://www.waveshare.com/w/upload/b/b7/NRF51822-Eval-Kit-UserManual-EN.pdf
 .. _Schematic: https://www.waveshare.com/w/upload/1/1b/BLE400-Schematic.pdf

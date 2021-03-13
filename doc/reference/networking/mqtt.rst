@@ -3,6 +3,10 @@
 MQTT
 ####
 
+.. contents::
+    :local:
+    :depth: 2
+
 Overview
 ********
 
@@ -32,8 +36,8 @@ defined:
 .. code-block:: c
 
    /* Buffers for MQTT client. */
-   static u8_t rx_buffer[256];
-   static u8_t tx_buffer[256];
+   static uint8_t rx_buffer[256];
+   static uint8_t tx_buffer[256];
 
    /* MQTT client context */
    static struct mqtt_client client_ctx;
@@ -73,7 +77,7 @@ used. An example configuration for TCP transport is shown below:
    /* MQTT client configuration */
    client_ctx.broker = &broker;
    client_ctx.evt_cb = mqtt_evt_handler;
-   client_ctx.client_id.utf8 = (u8_t *)"zephyr_mqtt_client";
+   client_ctx.client_id.utf8 = (uint8_t *)"zephyr_mqtt_client";
    client_ctx.client_id.size = sizeof("zephyr_mqtt_client") - 1;
    client_ctx.password = NULL;
    client_ctx.user_name = NULL;
@@ -88,7 +92,7 @@ used. An example configuration for TCP transport is shown below:
 
 After the configuration is set up, the MQTT client can connect to the MQTT broker.
 Call the ``mqtt_connect`` function, which will create the appropriate socket,
-establish a TCP/TLS connection, and send an `MQTT CONNECT` message.
+establish a TCP/TLS connection, and send an ``MQTT CONNECT`` message.
 When notified, the application should call the ``mqtt_input`` function to process
 the response received. Note, that ``mqtt_input`` is a non-blocking function,
 therefore the application should use socket ``poll`` to wait for the response.
@@ -140,7 +144,7 @@ additional configuration information:
 
    struct mqtt_sec_config *tls_config = &client_ctx.transport.tls.config;
 
-   tls_config->peer_verify = 2;
+   tls_config->peer_verify = TLS_PEER_VERIFY_REQUIRED;
    tls_config->cipher_list = NULL;
    tls_config->sec_tag_list = m_sec_tags;
    tls_config->sec_tag_count = ARRAY_SIZE(m_sec_tags);

@@ -12,7 +12,18 @@ toolchain:
   - zephyr
   - gnuarmemb
   - xtools
-ram: 128
-flash: 128
+ram: 32768
+flash: 4096
 supported:
-  - hwinfo
+  - arduino_gpio
+  - counter
+  - display
+  - gpio
+  - i2c
+  - netif:eth
+  - pwm
+  - sdhc
+  - usb_device
+  - video
+  - kscan:touch
+  - can

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 add_subdirectory(modules)
 
 zephyr_sources_ifdef(
@@ -24,8 +26,18 @@ zephyr_sources_ifdef(
 )
 
 zephyr_sources_ifdef(
+  CONFIG_SHELL_BACKEND_TELNET
+  shell_telnet.c
+)
+
+zephyr_sources_ifdef(
   CONFIG_SHELL_HELP
   shell_help.c
+  )
+
+zephyr_sources_ifdef(
+  CONFIG_SHELL_GETOPT
+  shell_getopt.c
   )
 
 zephyr_sources_ifdef(

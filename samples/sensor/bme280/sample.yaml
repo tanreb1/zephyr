@@ -1,20 +1,20 @@
 sample:
   name: BME280 Sensor sample
 tests:
-  test:
+  sample.sensor.bme280:
     harness: console
     tags: sensors
-    depends_on: i2c bme280
+    platform_allow: adafruit_feather_m0_basic_proto
     harness_config:
         type: one_line
         regex:
             - "temp: (.*); press: (.*); humidity: (.*)"
         fixture: fixture_i2c_bme280
-  test_spi:
+  sample.sensor.bme280.spi:
     harness: console
     tags: sensors
     depends_on: spi bme280
-    extra_args: "CONF_FILE=prj_spi.conf"
+    extra_args: "DTC_OVERLAY_FILE=arduino_spi.overlay"
     harness_config:
         type: one_line
         regex:

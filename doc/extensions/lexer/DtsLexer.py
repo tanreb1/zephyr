@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# SPDX-License-Identifier: BSD-2-Clause
 #
 # Contributors Listed Below - COPYRIGHT 2016
 # [+] International Business Machines Corp.
@@ -62,7 +63,7 @@ class DtsLexer(RegexLexer):
         'node': [
             (r'\s+', Text),
             (r'((?:[0-9a-zA-Z,._+-]+):)?(\s*)([0-9a-zA-Z,._+-]+)(@[0-9a-zA-Z,._+-]+)?(\s*)({)', bygroups(Name.Label, Text, Name.Class, Name.Function, Text, Punctuation), ('node-content')),
-            (r'(/)(\s+)({)', bygroups(Keyword, Text, Punctuation) , ('node-content')),
+            (r'(/)(\s+)({)', bygroups(Keyword, Text, Punctuation), ('node-content')),
         ],
         'node-content': [
             include('comments'),

@@ -1,13 +1,13 @@
 .. _bl654_dvk:
 
-BL654 DVK
-#################
+Laird Connectivity BL654 DVK
+############################
 
 Overview
 ********
 
 The BL654 Development Kit hardware provides
-support for the Laird BL654 module powered by a Nordic Semiconductor nRF52840 ARM Cortex-M4F CPU.
+support for the Laird Connectivity BL654 module powered by a Nordic Semiconductor nRF52840 ARM Cortex-M4F CPU.
 
 This development kit has the following features:
 
@@ -115,10 +115,9 @@ Push buttons
 Programming and Debugging
 *************************
 
-Applications for the ``bl654_dvk`` board configuration can be
-built and flashed in the usual way (see :ref:`build_an_application`
-and :ref:`application_run` for more details); however, the standard
-debugging targets are not currently available.
+Applications for the ``bl654_dvk`` board configuration can be built, flashed,
+and debugged in the usual way. See :ref:`build_an_application` and
+:ref:`application_run` for more details on building and running.
 
 Flashing
 ========
@@ -176,7 +175,7 @@ the board are working properly with Zephyr:
 
 You can build and flash the examples to make sure Zephyr is running correctly on
 your board. The button and LED definitions can be found in
-:file:`boards/arm/bl654_dvk/bl654_dvk.dts`.
+:zephyr_file:`boards/arm/bl654_dvk/bl654_dvk.dts`.
 
 
 References
@@ -186,4 +185,3 @@ References
 
 .. _BL654 website: https://connectivity.lairdtech.com/wireless-modules/bluetooth-modules/bluetooth-5-modules/bl654-series
 .. _J-Link Software and documentation pack: https://www.segger.com/jlink-software.html
-

@@ -6,7 +6,7 @@ Testusb application sample
 The testusb sample implements a loopback function. This function can be used
 to test USB device drivers and the device stack connected to a Linux host
 and has a similar interface to "Gadget Zero" of the Linux kernel.
-The userspace tool `testusb` is needed to start the tests.
+The userspace tool ``testusb`` is needed to start the tests.
 
 Building and flashing
 *********************
@@ -18,27 +18,27 @@ Testing
 
 To run USB tests:
 
-#. Load the `usbtest` Linux kernel module on the Linux Host.
+#. Load the ``usbtest`` Linux kernel module on the Linux Host.
 
    .. code-block:: console
 
-      $ sudo modprobe usbtest vendor=0x2fe3 product=0x0100
+      $ sudo modprobe usbtest vendor=0x2fe3 product=0x0009
 
-   The `usbtest` module should claim the device:
+   The ``usbtest`` module should claim the device:
 
    .. code-block:: console
 
       [21746.128743] usb 9-1: new full-speed USB device number 16 using uhci_hcd
-      [21746.303051] usb 9-1: New USB device found, idVendor=2fe3, idProduct=0100
+      [21746.303051] usb 9-1: New USB device found, idVendor=2fe3, idProduct=0009, bcdDevice= 2.03
       [21746.303055] usb 9-1: New USB device strings: Mfr=1, Product=2, SerialNumber=3
       [21746.303058] usb 9-1: Product: Zephyr testusb sample
       [21746.303060] usb 9-1: Manufacturer: ZEPHYR
-      [21746.303063] usb 9-1: SerialNumber: 0.01
-      [21746.306149] usbtest 9-1:1.0: matched module params, vend=0x2fe3 prod=0x0100
+      [21746.303063] usb 9-1: SerialNumber: 86FE679A598AC47A
+      [21746.306149] usbtest 9-1:1.0: matched module params, vend=0x2fe3 prod=0x0009
       [21746.306153] usbtest 9-1:1.0: Generic USB device
       [21746.306156] usbtest 9-1:1.0: full-speed {control} tests
 
-#. Use the `testusb` tool in `linux/tools/usb` inside Linux kernel source directory
+#. Use the ``testusb`` tool in ``linux/tools/usb`` inside Linux kernel source directory
    to start the tests.
 
    .. code-block:: console
@@ -49,16 +49,17 @@ To run USB tests:
       /dev/bus/usb/009/016 test 10,   11.990054 secs
 
 #. To run all the tests the Zephyr's VID / PID should be inserted to USB
-   driver id table. The method for loading the `usbtest` driver for our
+   driver id table. The method for loading the ``usbtest`` driver for our
    device is described here: https://lwn.net/Articles/160944/.
 
-   Since we use the "Gadget Zero" interface we specify reference device `0525:a4a0`.
+   Since we use the "Gadget Zero" interface we specify reference device
+   ``0525:a4a0``.
 
    .. code-block:: console
 
-      $ sudo sh -c "echo 0x2fe3 0x0100 0 0x0525 0xa4a0 > /sys/bus/usb/drivers/usbtest/new_id"
+      $ sudo sh -c "echo 0x2fe3 0x0009 0 0x0525 0xa4a0 > /sys/bus/usb/drivers/usbtest/new_id"
 
-#. Use the `testusb` tool in `linux/tools/usb` inside Linux kernel source directory
+#. Use the ``testusb`` tool in ``linux/tools/usb`` inside Linux kernel source directory
    to start the tests.
 
    .. code-block:: console
