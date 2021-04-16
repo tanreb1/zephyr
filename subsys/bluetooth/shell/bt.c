@@ -1651,27 +1651,34 @@ static int cmd_per_adv_sync_create(const struct shell *shell, size_t argc,
 static int cmd_per_adv_sync_delete(const struct shell *shell, size_t argc,
 				   char *argv[])
 {
+	struct bt_le_per_adv_sync *per_adv_sync = NULL;
+	int index;
 	int err;
-	int index = 0;
-	struct bt_le_per_adv_sync **per_adv_sync = NULL;
 
 	if (argc > 1) {
 		index = strtol(argv[1], NULL, 10);
+	} else {
+		index = 0;
 	}
 
-	per_adv_sync = &per_adv_syncs[index];
+	if (index >= ARRAY_SIZE(per_adv_syncs)) {
+		shell_error(shell, "Maximum index is %u but %u was requested",
+			    ARRAY_SIZE(per_adv_syncs) - 1, index);
+	}
+
+	per_adv_sync = per_adv_syncs[index];
 
 	if (!per_adv_sync) {
 		return -EINVAL;
 	}
 
-	err = bt_le_per_adv_sync_delete(*per_adv_sync);
+	err = bt_le_per_adv_sync_delete(per_adv_sync);
 
 	if (err) {
 		shell_error(shell, "Per adv sync delete failed (%d)", err);
 	} else {
 		shell_print(shell, "Per adv sync deleted");
-		*per_adv_sync = NULL;
+		per_adv_syncs[index] = NULL;
 	}
 
 	return 0;
@@ -1773,6 +1780,37 @@ static int cmd_past_unsubscribe(const struct shell *shell, size_t argc,
 
 	if (err) {
 		shell_error(shell, "PAST unsubscribe failed (%d)", err);
+	}
+
+	return err;
+}
+
+static int cmd_per_adv_sync_transfer(const struct shell *shell, size_t argc,
+				     char *argv[])
+{
+	int err;
+	int index;
+	struct bt_le_per_adv_sync *per_adv_sync;
+
+	if (argc > 1) {
+		index = strtol(argv[1], NULL, 10);
+	} else {
+		index = 0;
+	}
+
+	if (index >= ARRAY_SIZE(per_adv_syncs)) {
+		shell_error(shell, "Maximum index is %u but %u was requested",
+			    ARRAY_SIZE(per_adv_syncs) - 1, index);
+	}
+
+	per_adv_sync = per_adv_syncs[index];
+	if (!per_adv_sync) {
+		return -EINVAL;
+	}
+
+	err = bt_le_per_adv_sync_transfer(per_adv_sync, default_conn, 0);
+	if (err) {
+		shell_error(shell, "Periodic advertising sync transfer failed (%d)", err);
 	}
 
 	return err;
@@ -3052,6 +3090,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bt_cmds,
 		      cmd_past_subscribe, 1, 7),
 	SHELL_CMD_ARG(past-unsubscribe, NULL, "[conn]",
 		      cmd_past_unsubscribe, 1, 1),
+	SHELL_CMD_ARG(per-adv-sync-transfer, NULL, "[<index>]",
+		      cmd_per_adv_sync_transfer, 1, 1),
 #endif /* defined(CONFIG_BT_PER_ADV_SYNC) */
 #if defined(CONFIG_BT_CENTRAL)
 	SHELL_CMD_ARG(connect, NULL, HELP_ADDR_LE EXT_ADV_SCAN_OPT,

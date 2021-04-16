@@ -46,6 +46,7 @@
 #include "ll_sw/ull_scan_types.h"
 #include "ll_sw/ull_sync_types.h"
 #include "ll_sw/ull_conn_types.h"
+#include "ll_sw/ull_conn_internal.h"
 #include "ll_sw/ull_conn_iso_types.h"
 
 #include "ll.h"
@@ -682,12 +683,28 @@ static void read_supported_commands(struct net_buf *buf, struct net_buf **evt)
 			    BIT(6) | BIT(7);
 	/* LE Remove Adv Set, LE Clear Adv Sets */
 	rp->commands[37] |= BIT(0) | BIT(1);
+#if defined(CONFIG_BT_CTLR_ADV_PERIODIC)
+	/* LE Set PA Params, LE Set PA Data, LE Set PA Enable */
+	rp->commands[37] |= BIT(2) | BIT(3) | BIT(4);
+#endif /* CONFIG_BT_CTLR_ADV_PERIODIC */
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 #endif /* CONFIG_BT_BROADCASTER */
 
 #if defined(CONFIG_BT_OBSERVER)
 	/* LE Set Scan Params, LE Set Scan Enable */
 	rp->commands[26] |= BIT(2) | BIT(3);
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+	/* LE Set Extended Scan Params, LE Set Extended Scan Enable */
+	rp->commands[37] |= BIT(5) | BIT(6);
+#if defined(CONFIG_BT_CTLR_SYNC_PERIODIC)
+	/* LE PA Create Sync, LE PA Create Sync Cancel, LE PA Terminate Sync */
+	rp->commands[38] |= BIT(0) | BIT(1) | BIT(2);
+	/* LE Set PA Receive Enable */
+	rp->commands[40] |= BIT(5);
+#endif /* CONFIG_BT_CTLR_SYNC_PERIODIC */
+#endif /* CONFIG_BT_CTLR_ADV_EXT */
+
 #endif /* CONFIG_BT_OBSERVER */
 
 #if defined(CONFIG_BT_CONN)
@@ -696,6 +713,11 @@ static void read_supported_commands(struct net_buf *buf, struct net_buf **evt)
 	rp->commands[26] |= BIT(4) | BIT(5);
 	/* Set Host Channel Classification */
 	rp->commands[27] |= BIT(3);
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+	/* LE Extended Create Connection */
+	rp->commands[37] |= BIT(7);
+#endif /* CONFIG_BT_CTLR_ADV_EXT */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 	/* LE Start Encryption */
@@ -1904,7 +1926,7 @@ static void le_setup_iso_path(struct net_buf *buf, struct net_buf **evt)
 
 	rp = hci_cmd_complete(evt, sizeof(*rp));
 	rp->status = status;
-	rp->handle = cmd->handle;
+	rp->handle = sys_cpu_to_le16(handle);
 }
 
 static void le_remove_iso_path(struct net_buf *buf, struct net_buf **evt)
@@ -1920,7 +1942,7 @@ static void le_remove_iso_path(struct net_buf *buf, struct net_buf **evt)
 
 	rp = hci_cmd_complete(evt, sizeof(*rp));
 	rp->status = status;
-	rp->handle = cmd->handle;
+	rp->handle = sys_cpu_to_le16(handle);
 }
 
 static void le_iso_receive_test(struct net_buf *buf, struct net_buf **evt)
@@ -3186,7 +3208,7 @@ static void le_cis_established(struct pdu_data *pdu_data,
 	cis = node_rx->hdr.rx_ftr.param;
 	cig = cis->group;
 	lll_cis = &cis->lll;
-	is_central = lll_cis->conn->role == BT_CONN_ROLE_MASTER;
+	is_central = cig->lll.role == BT_CONN_ROLE_MASTER;
 	lll_cis_c = is_central ? &lll_cis->tx : &lll_cis->rx;
 	lll_cis_p = is_central ? &lll_cis->rx : &lll_cis->tx;
 	est = (void *)pdu_data;
@@ -6215,6 +6237,11 @@ uint8_t hci_get_class(struct node_rx_pdu *node_rx)
 #endif /* CONFIG_BT_CTLR_PHY */
 			return HCI_CLASS_EVT_CONNECTION;
 #endif /* CONFIG_BT_CONN */
+#if defined(CONFIG_BT_CTLR_ADV_ISO) || defined(CONFIG_BT_CTLR_SYNC_ISO) || \
+	defined(CONFIG_BT_CTLR_PERIPHERAL_ISO) || defined(CONFIG_BT_CTLR_CENTRAL_ISO)
+		case NODE_RX_TYPE_ISO_PDU:
+			return HCI_CLASS_ISO_DATA;
+#endif
 
 #if CONFIG_BT_CTLR_USER_EVT_RANGE > 0
 		case NODE_RX_TYPE_USER_START ... NODE_RX_TYPE_USER_END - 1:

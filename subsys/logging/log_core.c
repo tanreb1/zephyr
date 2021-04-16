@@ -36,7 +36,11 @@ LOG_MODULE_REGISTER(log);
 #endif
 
 #ifndef CONFIG_LOG_STRDUP_MAX_STRING
-#define CONFIG_LOG_STRDUP_MAX_STRING 0
+/* Required to suppress compiler warnings related to array subscript above array bounds.
+ * log_strdup explicitly accesses element with index of (sizeof(log_strdup_buf.buf) - 2).
+ * Set to 2 because some compilers generate warning on strncpy(dst, src, 0).
+ */
+#define CONFIG_LOG_STRDUP_MAX_STRING 2
 #endif
 
 #ifndef CONFIG_LOG_STRDUP_BUF_COUNT
@@ -46,7 +50,7 @@ LOG_MODULE_REGISTER(log);
 struct log_strdup_buf {
 	atomic_t refcount;
 	char buf[CONFIG_LOG_STRDUP_MAX_STRING + 1]; /* for termination */
-};
+} __aligned(sizeof(uintptr_t));
 
 #define LOG_STRDUP_POOL_BUFFER_SIZE \
 	(sizeof(struct log_strdup_buf) * CONFIG_LOG_STRDUP_BUF_COUNT)
@@ -85,8 +89,8 @@ uint32_t z_log_get_s_mask(const char *str, uint32_t nargs)
 {
 	char curr;
 	bool arm = false;
-	uint32_t arg = 0;
-	uint32_t mask = 0;
+	uint32_t arg = 0U;
+	uint32_t mask = 0U;
 
 	__ASSERT_NO_MSG(nargs <= 8*sizeof(mask));
 
@@ -115,7 +119,7 @@ uint32_t z_log_get_s_mask(const char *str, uint32_t nargs)
  */
 static bool is_rodata(const void *addr)
 {
-#if defined(CONFIG_ARM) || defined(CONFIG_ARC) || defined(CONFIG_X86)
+#if defined(CONFIG_ARM) || defined(CONFIG_ARC) || defined(CONFIG_X86) || defined(CONFIG_ARM64)
 	extern const char *_image_rodata_start[];
 	extern const char *_image_rodata_end[];
 	#define RO_START _image_rodata_start
@@ -334,7 +338,7 @@ void log_printk(const char *fmt, va_list ap)
 			}
 		};
 
-		if (_is_user_context()) {
+		if (k_is_user_context()) {
 			uint8_t str[CONFIG_LOG_PRINTK_MAX_STRING_LENGTH + 1];
 
 			vsnprintk(str, sizeof(str), fmt, ap);
@@ -387,7 +391,7 @@ uint32_t log_count_args(const char *fmt)
 void log_generic(struct log_msg_ids src_level, const char *fmt, va_list ap,
 		 enum log_strdup_action strdup_action)
 {
-	if (_is_user_context()) {
+	if (k_is_user_context()) {
 		log_generic_from_user(src_level, fmt, ap);
 	} else if (IS_ENABLED(CONFIG_LOG_IMMEDIATE) &&
 	    (!IS_ENABLED(CONFIG_LOG_FRONTEND))) {
@@ -496,7 +500,7 @@ void log_core_init(void)
 	/* Set default timestamp. */
 	if (sys_clock_hw_cycles_per_sec() > 1000000) {
 		timestamp_func = k_uptime_get_32;
-		freq = 1000;
+		freq = 1000U;
 	} else {
 		timestamp_func = k_cycle_get_32_wrapper;
 		freq = sys_clock_hw_cycles_per_sec();
@@ -578,7 +582,7 @@ void log_thread_set(k_tid_t process_tid)
 
 int log_set_timestamp_func(timestamp_get_t timestamp_getter, uint32_t freq)
 {
-	if (!timestamp_getter) {
+	if (timestamp_getter == NULL) {
 		return -EINVAL;
 	}
 
@@ -891,7 +895,7 @@ char *log_strdup(const char *str)
 	int err;
 
 	if (IS_ENABLED(CONFIG_LOG_IMMEDIATE) ||
-	    is_rodata(str) || _is_user_context()) {
+	    is_rodata(str) || k_is_user_context()) {
 		return (char *)str;
 	}
 

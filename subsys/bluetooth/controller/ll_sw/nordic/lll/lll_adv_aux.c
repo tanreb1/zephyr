@@ -198,11 +198,6 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 	DEBUG_RADIO_START_A(1);
 
-#if !defined(BT_CTLR_ADV_EXT_PBACK)
-	/* Set up Radio H/W */
-	radio_reset();
-#endif  /* !BT_CTLR_ADV_EXT_PBACK */
-
 	lll = p->param;
 
 	/* FIXME: get latest only when primary PDU without Aux PDUs */
@@ -233,17 +228,14 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 	/* Abort if no aux_ptr filled */
 	if (unlikely(!pri_hdr->aux_ptr || !aux_ptr->offs)) {
-		int err;
+		radio_isr_set(lll_isr_early_abort, lll);
+		radio_disable();
 
-		err = lll_hfclock_off();
-		LL_ASSERT(err >= 0);
-
-		lll_done(NULL);
-
-		DEBUG_RADIO_CLOSE_A(0);
 		return 0;
 	}
 
+	/* Set up Radio H/W */
+	radio_reset();
 
 #if defined(CONFIG_BT_CTLR_TX_PWR_DYNAMIC_CONTROL)
 	radio_tx_power_set(lll->tx_pwr_lvl);
@@ -257,13 +249,11 @@ static int prepare_cb(struct lll_prepare_param *p)
 	radio_phy_set(phy_s, 1);
 	radio_pkt_configure(8, PDU_AC_PAYLOAD_SIZE_MAX, (phy_s << 1));
 
-#if !defined(BT_CTLR_ADV_EXT_PBACK)
 	/* Access address and CRC */
 	aa = sys_cpu_to_le32(PDU_AC_ACCESS_ADDR);
 	radio_aa_set((uint8_t *)&aa);
 	radio_crc_configure(((0x5bUL) | ((0x06UL) << 8) | ((0x00UL) << 16)),
 			    0x555555);
-#endif  /* !BT_CTLR_ADV_EXT_PBACK */
 
 	/* Use channel idx in aux_ptr */
 	lll_chan_set(aux_ptr->chan_idx);
@@ -302,11 +292,6 @@ static int prepare_cb(struct lll_prepare_param *p)
 		radio_switch_complete_and_disable();
 	}
 
-#if defined(BT_CTLR_ADV_EXT_PBACK)
-	start_us = 1000;
-	radio_tmr_start_us(1, start_us);
-#else /* !BT_CTLR_ADV_EXT_PBACK */
-
 	ticks_at_event = p->ticks_at_expire;
 	evt = HDR_LLL2EVT(lll);
 	ticks_at_event += lll_evt_offset_get(evt);
@@ -316,7 +301,6 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 	remainder = p->remainder;
 	start_us = radio_tmr_start(1, ticks_at_start, remainder);
-#endif /* !BT_CTLR_ADV_EXT_PBACK */
 
 	/* capture end of Tx-ed PDU, used to calculate HCTO. */
 	radio_tmr_end_capture();
@@ -577,8 +561,7 @@ static inline int isr_rx_pdu(struct lll_adv_aux *lll_aux,
 		   lll_adv_connect_ind_check(lll, pdu_rx, tx_addr, addr,
 					     rx_addr, tgt_addr,
 					     devmatch_ok, &rl_idx) &&
-		   lll->conn &&
-		   !lll->conn->initiated) {
+		   lll->conn) {
 		struct node_rx_ftr *ftr;
 		struct node_rx_pdu *rx;
 		struct pdu_adv *pdu_tx;
@@ -686,7 +669,7 @@ static void isr_tx_connect_rsp(void *param)
 
 	if (is_done) {
 		/* Stop further LLL radio events */
-		lll->conn->initiated = 1;
+		lll->conn->slave.initiated = 1;
 	}
 
 	/* Clear radio status and events */

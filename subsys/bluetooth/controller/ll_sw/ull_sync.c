@@ -24,6 +24,7 @@
 #include "lll.h"
 #include "lll_clock.h"
 #include "lll/lll_vendor.h"
+#include "lll_chan.h"
 #include "lll_scan.h"
 #include "lll_sync.h"
 #include "lll_sync_iso.h"
@@ -47,7 +48,7 @@ static int init_reset(void);
 static inline struct ll_sync_set *sync_acquire(void);
 static void timeout_cleanup(struct ll_sync_set *sync);
 static void ticker_cb(uint32_t ticks_at_expire, uint32_t remainder,
-		      uint16_t lazy, void *param);
+		      uint16_t lazy, uint8_t force, void *param);
 static void ticker_op_cb(uint32_t status, void *param);
 static void ticker_update_sync_op_cb(uint32_t status, void *param);
 static void ticker_stop_op_cb(uint32_t status, void *param);
@@ -153,7 +154,6 @@ uint8_t ll_sync_create(uint8_t options, uint8_t sid, uint8_t adv_addr_type,
 	lll_sync = &sync->lll;
 	lll_sync->skip_prepare = 0U;
 	lll_sync->skip_event = 0U;
-	lll_sync->data_chan_id = 0U;
 	lll_sync->window_widening_prepare_us = 0U;
 	lll_sync->window_widening_event_us = 0U;
 
@@ -376,6 +376,7 @@ void ull_sync_setup(struct ll_scan_set *scan, struct ll_scan_aux_set *aux,
 	}
 
 	memcpy(lll->access_addr, &si->aa, sizeof(lll->access_addr));
+	lll->data_chan_id = lll_chan_id(lll->access_addr);
 	memcpy(lll->crc_init, si->crc_init, sizeof(lll->crc_init));
 	lll->event_counter = si->evt_cntr;
 	lll->phy = aux->lll.phy;
@@ -584,7 +585,7 @@ static void timeout_cleanup(struct ll_sync_set *sync)
 }
 
 static void ticker_cb(uint32_t ticks_at_expire, uint32_t remainder,
-		      uint16_t lazy, void *param)
+		      uint16_t lazy, uint8_t force, void *param)
 {
 	static memq_link_t link;
 	static struct mayfly mfy = {0, 0, &link, NULL, lll_sync_prepare};
@@ -606,6 +607,7 @@ static void ticker_cb(uint32_t ticks_at_expire, uint32_t remainder,
 	p.ticks_at_expire = ticks_at_expire;
 	p.remainder = remainder;
 	p.lazy = lazy;
+	p.force = force;
 	p.param = lll;
 	mfy.param = &p;
 
