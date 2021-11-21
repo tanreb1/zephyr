@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <cache.h>
 #include <device.h>
 #include <init.h>
 #include <kernel.h>
@@ -16,7 +17,7 @@
 #include <logging/log.h>
 #include <arch/arm64/cpu.h>
 #include <arch/arm64/lib_helpers.h>
-#include <arch/arm64/arm_mmu.h>
+#include <arch/arm64/mm.h>
 #include <linker/linker-defs.h>
 #include <spinlock.h>
 #include <sys/util.h>
@@ -101,6 +102,19 @@ static inline uint64_t *pte_desc_table(uint64_t desc)
 	uint64_t address = desc & GENMASK(47, PAGE_SIZE_SHIFT);
 
 	return (uint64_t *)address;
+}
+
+static inline bool is_desc_block_aligned(uint64_t desc, unsigned int level_size)
+{
+	uint64_t mask = GENMASK(47, PAGE_SIZE_SHIFT);
+	bool aligned = !((desc & mask) & (level_size - 1));
+
+	if (!aligned) {
+		MMU_DEBUG("misaligned desc 0x%016llx for block size 0x%x\n",
+			  desc, level_size);
+	}
+
+	return aligned;
 }
 
 static inline bool is_desc_superset(uint64_t desc1, uint64_t desc2,
@@ -258,7 +272,8 @@ static int set_mapping(struct arm_mmu_ptables *ptables,
 			goto move_on;
 		}
 
-		if ((size < level_size) || (virt & (level_size - 1))) {
+		if ((size < level_size) || (virt & (level_size - 1)) ||
+		    !is_desc_block_aligned(desc, level_size)) {
 			/* Range doesn't fit, create subtable */
 			table = expand_to_table(pte, level);
 			if (!table) {
@@ -644,15 +659,23 @@ static const struct arm_mmu_flat_range mmu_zephyr_ranges[] = {
 
 	/* Mark text segment cacheable,read only and executable */
 	{ .name  = "zephyr_code",
-	  .start = _image_text_start,
-	  .end   = _image_text_end,
+	  .start = __text_region_start,
+	  .end   = __text_region_end,
 	  .attrs = MT_NORMAL | MT_P_RX_U_RX | MT_DEFAULT_SECURE_STATE },
 
 	/* Mark rodata segment cacheable, read only and execute-never */
 	{ .name  = "zephyr_rodata",
-	  .start = _image_rodata_start,
-	  .end   = _image_rodata_end,
+	  .start = __rodata_region_start,
+	  .end   = __rodata_region_end,
 	  .attrs = MT_NORMAL | MT_P_RO_U_RO | MT_DEFAULT_SECURE_STATE },
+
+#ifdef CONFIG_NOCACHE_MEMORY
+	/* Mark nocache segment noncachable, read-write and execute-never */
+	{ .name  = "nocache_data",
+	  .start = _nocache_ram_start,
+	  .end   = _nocache_ram_end,
+	  .attrs = MT_NORMAL_NC | MT_P_RW_U_RW | MT_DEFAULT_SECURE_STATE },
+#endif
 };
 
 static inline void add_arm_mmu_flat_range(struct arm_mmu_ptables *ptables,
@@ -762,6 +785,9 @@ static void enable_mmu_el1(struct arm_mmu_ptables *ptables, unsigned int flags)
 	/* Ensure these changes are seen before MMU is enabled */
 	isb();
 
+	/* Invalidate all data caches before enable them */
+	sys_cache_data_all(K_CACHE_INVD);
+
 	/* Enable the MMU and data cache */
 	val = read_sctlr_el1();
 	write_sctlr_el1(val | SCTLR_M_BIT | SCTLR_C_BIT);
@@ -785,7 +811,7 @@ static sys_slist_t domain_list;
  * This function provides the default configuration mechanism for the Memory
  * Management Unit (MMU).
  */
-void z_arm64_mmu_init(void)
+void z_arm64_mm_init(bool is_primary_core)
 {
 	unsigned int flags = 0U;
 
@@ -801,7 +827,7 @@ void z_arm64_mmu_init(void)
 	/*
 	 * Only booting core setup up the page tables.
 	 */
-	if (IS_PRIMARY_CORE()) {
+	if (is_primary_core) {
 		kernel_ptables.base_xlat_table = new_table();
 		setup_page_tables(&kernel_ptables);
 	}
@@ -904,7 +930,53 @@ void arch_mem_unmap(void *addr, size_t size)
 	}
 }
 
+int arch_page_phys_get(void *virt, uintptr_t *phys)
+{
+	uint64_t par;
+	int key;
+
+	key = arch_irq_lock();
+	__asm__ volatile ("at S1E1R, %0" : : "r" (virt));
+	isb();
+	par = read_sysreg(PAR_EL1);
+	arch_irq_unlock(key);
+
+	if (par & BIT(0)) {
+		return -EFAULT;
+	}
+
+	if (phys) {
+		*phys = par & GENMASK(47, 12);
+	}
+	return 0;
+}
+
+size_t arch_virt_region_align(uintptr_t phys, size_t size)
+{
+	size_t alignment = CONFIG_MMU_PAGE_SIZE;
+	size_t level_size;
+	int level;
+
+	for (level = XLAT_LAST_LEVEL; level >= BASE_XLAT_LEVEL; level--) {
+		level_size = 1 << LEVEL_TO_VA_SIZE_SHIFT(level);
+
+		if (size < level_size) {
+			break;
+		}
+
+		if ((phys & (level_size - 1))) {
+			break;
+		}
+
+		alignment = level_size;
+	}
+
+	return alignment;
+}
+
 #ifdef CONFIG_USERSPACE
+
+static void z_arm64_swap_ptables(struct k_thread *incoming);
 
 static inline bool is_ptable_active(struct arm_mmu_ptables *ptables)
 {
@@ -1012,7 +1084,7 @@ void arch_mem_domain_thread_add(struct k_thread *thread)
 	} else {
 #ifdef CONFIG_SMP
 		/* the thread could be running on another CPU right now */
-		z_arm64_ptable_ipi();
+		z_arm64_mem_cfg_ipi();
 #endif
 	}
 
@@ -1042,7 +1114,7 @@ void arch_mem_domain_thread_remove(struct k_thread *thread)
 		  thread->stack_info.size);
 }
 
-void z_arm64_swap_ptables(struct k_thread *incoming)
+static void z_arm64_swap_ptables(struct k_thread *incoming)
 {
 	struct arm_mmu_ptables *ptables = incoming->arch.ptables;
 
@@ -1051,7 +1123,7 @@ void z_arm64_swap_ptables(struct k_thread *incoming)
 	}
 }
 
-void z_arm64_thread_pt_init(struct k_thread *incoming)
+void z_arm64_thread_mem_domains_init(struct k_thread *incoming)
 {
 	struct arm_mmu_ptables *ptables;
 
@@ -1063,6 +1135,11 @@ void z_arm64_thread_pt_init(struct k_thread *incoming)
 	/* Map the thread stack */
 	map_thread_stack(incoming, ptables);
 
+	z_arm64_swap_ptables(incoming);
+}
+
+void z_arm64_swap_mem_domains(struct k_thread *incoming)
+{
 	z_arm64_swap_ptables(incoming);
 }
 

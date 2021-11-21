@@ -18,7 +18,7 @@
 #include <init.h>
 
 #include <drivers/clock_control/stm32_clock_control.h>
-#include <pinmux/stm32/pinmux_stm32.h>
+#include <pinmux/pinmux_stm32.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(pwm_stm32, CONFIG_PWM_LOG_LEVEL);
@@ -130,17 +130,17 @@ static int get_tim_clk(const struct stm32_pclken *pclken, uint32_t *tim_clk)
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 	if (pclken->bus == STM32_CLOCK_BUS_APB1) {
-		apb_psc = CONFIG_CLOCK_STM32_D2PPRE1;
+		apb_psc = STM32_D2PPRE1;
 	} else {
-		apb_psc = CONFIG_CLOCK_STM32_D2PPRE2;
+		apb_psc = STM32_D2PPRE2;
 	}
 #else
 	if (pclken->bus == STM32_CLOCK_BUS_APB1) {
-		apb_psc = CONFIG_CLOCK_STM32_APB1_PRESCALER;
+		apb_psc = STM32_APB1_PRESCALER;
 	}
 #if !defined(CONFIG_SOC_SERIES_STM32F0X) && !defined(CONFIG_SOC_SERIES_STM32G0X)
 	else {
-		apb_psc = CONFIG_CLOCK_STM32_APB2_PRESCALER;
+		apb_psc = STM32_APB2_PRESCALER;
 	}
 #endif
 #endif
@@ -322,7 +322,7 @@ static int pwm_stm32_init(const struct device *dev)
 		return -EIO;
 	}
 
-#ifndef CONFIG_SOC_SERIES_STM32L0X
+#if !defined(CONFIG_SOC_SERIES_STM32L0X) && !defined(CONFIG_SOC_SERIES_STM32L1X)
 	/* enable outputs and counter */
 	if (IS_TIM_BREAK_INSTANCE(cfg->timer)) {
 		LL_TIM_EnableAllOutputs(cfg->timer);
@@ -340,6 +340,13 @@ static int pwm_stm32_init(const struct device *dev)
 		.enr = DT_CLOCKS_CELL(DT_PARENT(DT_DRV_INST(index)), bits)     \
 	}
 
+/* Print warning if any pwm node has 'st,prescaler' property */
+#define PRESCALER_PWM(index) DT_INST_NODE_HAS_PROP(index, st_prescaler) ||
+#if (DT_INST_FOREACH_STATUS_OKAY(PRESCALER_PWM) 0)
+#warning "DT property 'st,prescaler' in pwm node is deprecated and should be \
+replaced by 'st,prescaler' property in parent node, aka timers"
+#endif
+
 #define PWM_DEVICE_INIT(index)                                                 \
 	static struct pwm_stm32_data pwm_stm32_data_##index;                   \
 									       \
@@ -349,13 +356,17 @@ static int pwm_stm32_init(const struct device *dev)
 	static const struct pwm_stm32_config pwm_stm32_config_##index = {      \
 		.timer = (TIM_TypeDef *)DT_REG_ADDR(                           \
 			DT_PARENT(DT_DRV_INST(index))),                        \
-		.prescaler = DT_INST_PROP(index, st_prescaler),                \
+		/* For compatibility reason, use pwm st_prescaler property  */ \
+		/* if exist, otherwise use parent (timers) property         */ \
+		.prescaler = DT_PROP_OR(DT_DRV_INST(index), st_prescaler,      \
+			(DT_PROP(DT_PARENT(DT_DRV_INST(index)),                \
+				 st_prescaler))),                              \
 		.pclken = DT_INST_CLK(index, timer),                           \
 		.pinctrl = pwm_pins_##index,                                   \
 		.pinctrl_len = ARRAY_SIZE(pwm_pins_##index),                   \
 	};                                                                     \
 									       \
-	DEVICE_DT_INST_DEFINE(index, &pwm_stm32_init, device_pm_control_nop,   \
+	DEVICE_DT_INST_DEFINE(index, &pwm_stm32_init, NULL,                    \
 			    &pwm_stm32_data_##index,                           \
 			    &pwm_stm32_config_##index, POST_KERNEL,            \
 			    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,                \

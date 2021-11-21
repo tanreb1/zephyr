@@ -21,3 +21,6 @@ supported:
   - adc
   - dac
   - backup_sram
+  - pwm
+  - rng
+  - dma

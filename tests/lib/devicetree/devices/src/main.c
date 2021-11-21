@@ -30,16 +30,16 @@ static int dev_init(const struct device *dev)
 	return 0;
 }
 
-DEVICE_DT_DEFINE(TEST_GPIO, dev_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(TEST_GPIO, dev_init, NULL,
 		 NULL, NULL, PRE_KERNEL_1, 90, NULL);
-DEVICE_DT_DEFINE(TEST_I2C, dev_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(TEST_I2C, dev_init, NULL,
 		 NULL, NULL, POST_KERNEL, 10, NULL);
-DEVICE_DT_DEFINE(TEST_DEVA, dev_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(TEST_DEVA, dev_init, NULL,
 		 NULL, NULL, POST_KERNEL, 20, NULL);
 /* NB: Intentional init devb before required gpiox */
-DEVICE_DT_DEFINE(TEST_DEVB, dev_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(TEST_DEVB, dev_init, NULL,
 		 NULL, NULL, POST_KERNEL, 30, NULL);
-DEVICE_DT_DEFINE(TEST_GPIOX, dev_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(TEST_GPIOX, dev_init, NULL,
 		 NULL, NULL, POST_KERNEL, 40, NULL);
 
 #define DEV_HDL(node_id) device_handle_get(DEVICE_DT_GET(node_id))
@@ -171,6 +171,18 @@ static void test_requires(void)
 	zassert_true(check_handle(DEV_HDL(TEST_GPIOX), hdls, nhdls), NULL);
 }
 
+
+static void test_get_or_null(void)
+{
+	const struct device *dev;
+
+	dev = DEVICE_DT_GET_OR_NULL(TEST_DEVA);
+	zassert_not_equal(dev, NULL, NULL);
+
+	dev = DEVICE_DT_GET_OR_NULL(non_existing_node);
+	zassert_equal(dev, NULL, NULL);
+}
+
 void test_main(void)
 {
 	size_t ndevs;
@@ -180,7 +192,8 @@ void test_main(void)
 
 	ztest_test_suite(devicetree_driver,
 			 ztest_unit_test(test_init_order),
-			 ztest_unit_test(test_requires)
-		);
+			 ztest_unit_test(test_requires),
+			 ztest_unit_test(test_get_or_null)
+			 );
 	ztest_run_test_suite(devicetree_driver);
 }

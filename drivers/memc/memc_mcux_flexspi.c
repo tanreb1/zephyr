@@ -30,6 +30,14 @@ struct memc_flexspi_data {
 	size_t size[kFLEXSPI_PortCount];
 };
 
+void memc_flexspi_wait_bus_idle(const struct device *dev)
+{
+	const struct memc_flexspi_config *config = dev->config;
+
+	while (false == FLEXSPI_GetBusIdleStatus(config->base)) {
+	}
+}
+
 bool memc_flexspi_is_running_xip(const struct device *dev)
 {
 	const struct memc_flexspi_config *config = dev->config;
@@ -99,7 +107,7 @@ void *memc_flexspi_get_ahb_address(const struct device *dev,
 	int i;
 
 	if (port >= kFLEXSPI_PortCount) {
-		LOG_ERR("Invalid port number");
+		LOG_ERR("Invalid port number: %u", port);
 		return NULL;
 	}
 
@@ -127,7 +135,10 @@ static int memc_flexspi_init(const struct device *dev)
 	flexspi_config.ahbConfig.enableAHBCachable = config->ahb_cacheable;
 	flexspi_config.ahbConfig.enableAHBPrefetch = config->ahb_prefetch;
 	flexspi_config.ahbConfig.enableReadAddressOpt = config->ahb_read_addr_opt;
+#if !(defined(FSL_FEATURE_FLEXSPI_HAS_NO_MCR0_COMBINATIONEN) && \
+	FSL_FEATURE_FLEXSPI_HAS_NO_MCR0_COMBINATIONEN)
 	flexspi_config.enableCombination = config->combination_mode;
+#endif
 	flexspi_config.enableSckBDiffOpt = config->sck_differential_clock;
 	flexspi_config.rxSampleClock = config->rx_sample_clock;
 
@@ -140,6 +151,8 @@ static int memc_flexspi_init(const struct device *dev)
 #define MEMC_FLEXSPI_CFG_XIP(node_id) DT_SAME_NODE(node_id, DT_NODELABEL(flexspi))
 #elif defined(CONFIG_XIP) && defined(CONFIG_CODE_FLEXSPI2)
 #define MEMC_FLEXSPI_CFG_XIP(node_id) DT_SAME_NODE(node_id, DT_NODELABEL(flexspi2))
+#elif defined(CONFIG_SOC_SERIES_IMX_RT6XX)
+#define MEMC_FLEXSPI_CFG_XIP(node_id) IS_ENABLED(CONFIG_XIP)
 #else
 #define MEMC_FLEXSPI_CFG_XIP(node_id) false
 #endif
@@ -163,7 +176,7 @@ static int memc_flexspi_init(const struct device *dev)
 									\
 	DEVICE_DT_INST_DEFINE(n,					\
 			      memc_flexspi_init,			\
-			      device_pm_control_nop,			\
+			      NULL,					\
 			      &memc_flexspi_data_##n,			\
 			      &memc_flexspi_config_##n,			\
 			      POST_KERNEL,				\

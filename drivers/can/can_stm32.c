@@ -6,7 +6,7 @@
 
 #include <drivers/clock_control/stm32_clock_control.h>
 #include <drivers/clock_control.h>
-#include <pinmux/stm32/pinmux_stm32.h>
+#include <pinmux/pinmux_stm32.h>
 #include <sys/util.h>
 #include <string.h>
 #include <kernel.h>
@@ -371,14 +371,15 @@ int can_stm32_set_timing(const struct device *dev,
 		goto done;
 	}
 
-	can->BTR &= ~(CAN_BTR_BRP_Msk | CAN_BTR_TS1_Msk |
-		      CAN_BTR_TS2_Msk | CAN_BTR_SJW_Msk);
-
-	can->BTR |=
+	can->BTR = (can->BTR & ~(CAN_BTR_BRP_Msk | CAN_BTR_TS1_Msk | CAN_BTR_TS2_Msk)) |
 	     (((timing->phase_seg1 - 1) << CAN_BTR_TS1_Pos) & CAN_BTR_TS1_Msk) |
 	     (((timing->phase_seg2 - 1) << CAN_BTR_TS2_Pos) & CAN_BTR_TS2_Msk) |
-	     (((timing->sjw        - 1) << CAN_BTR_SJW_Pos) & CAN_BTR_SJW_Msk) |
 	     (((timing->prescaler  - 1) << CAN_BTR_BRP_Pos) & CAN_BTR_BRP_Msk);
+
+	if (timing->sjw != CAN_SJW_NO_CHANGE) {
+		can->BTR = (can->BTR & ~CAN_BTR_SJW_Msk) |
+			   (((timing->sjw - 1) << CAN_BTR_SJW_Pos) & CAN_BTR_SJW_Msk);
+	}
 
 	ret = can_leave_init_mode(can);
 	if (ret) {
@@ -409,6 +410,13 @@ int can_stm32_get_core_clock(const struct device *dev, uint32_t *rate)
 	}
 
 	return 0;
+}
+
+int can_stm32_get_max_filters(const struct device *dev, enum can_ide id_type)
+{
+	ARG_UNUSED(id_type);
+
+	return CONFIG_CAN_MAX_FILTER;
 }
 
 static int can_stm32_init(const struct device *dev)
@@ -472,8 +480,8 @@ static int can_stm32_init(const struct device *dev)
 
 	/* Set TX priority to chronological order */
 	can->MCR |= CAN_MCR_TXFP;
-	can->MCR &= ~CAN_MCR_TTCM & ~CAN_MCR_TTCM & ~CAN_MCR_ABOM &
-		    ~CAN_MCR_AWUM & ~CAN_MCR_NART & ~CAN_MCR_RFLM;
+	can->MCR &= ~CAN_MCR_TTCM & ~CAN_MCR_ABOM & ~CAN_MCR_AWUM &
+		    ~CAN_MCR_NART & ~CAN_MCR_RFLM;
 #ifdef CONFIG_CAN_RX_TIMESTAMP
 	can->MCR |= CAN_MCR_TTCM;
 #endif
@@ -510,9 +518,6 @@ static int can_stm32_init(const struct device *dev)
 	if (ret) {
 		return ret;
 	}
-
-	/* Leave sleep mode after reset*/
-	can->MCR &= ~CAN_MCR_SLEEP;
 
 	cfg->config_irq(can);
 	can->IER |= CAN_IER_TMEIE;
@@ -588,7 +593,7 @@ int can_stm32_recover(const struct device *dev, k_timeout_t timeout)
 	start_time = k_uptime_ticks();
 
 	while (can->ESR & CAN_ESR_BOFF) {
-		if (timeout != K_FOREVER &&
+		if (!K_TIMEOUT_EQ(timeout, K_FOREVER) &&
 		    k_uptime_ticks() - start_time >= timeout.ticks) {
 			goto done;
 		}
@@ -665,7 +670,7 @@ int can_stm32_send(const struct device *dev, const struct zcan_frame *msg,
 	mb->callback_arg = callback_arg;
 	k_sem_reset(&mb->tx_int_sem);
 
-	/* mailbix identifier register setup */
+	/* mailbox identifier register setup */
 	mailbox->TIR &= CAN_TI0R_TXRQ;
 
 	if (msg->id_type == CAN_STANDARD_IDENTIFIER) {
@@ -1107,6 +1112,7 @@ static const struct can_driver_api can_api_funcs = {
 #endif
 	.register_state_change_isr = can_stm32_register_state_change_isr,
 	.get_core_clock = can_stm32_get_core_clock,
+	.get_max_filters = can_stm32_get_max_filters,
 	.timing_min = {
 		.sjw = 0x1,
 		.prop_seg = 0x00,
@@ -1150,9 +1156,9 @@ static const struct can_stm32_config can_stm32_cfg_1 = {
 
 static struct can_stm32_data can_stm32_dev_data_1;
 
-DEVICE_DT_DEFINE(DT_NODELABEL(can1), &can_stm32_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(DT_NODELABEL(can1), &can_stm32_init, NULL,
 		    &can_stm32_dev_data_1, &can_stm32_cfg_1,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		    POST_KERNEL, CONFIG_CAN_INIT_PRIORITY,
 		    &can_api_funcs);
 
 static void config_can_1_irq(CAN_TypeDef *can)
@@ -1212,8 +1218,8 @@ static int socket_can_init_1(const struct device *dev)
 }
 
 NET_DEVICE_INIT(socket_can_stm32_1, SOCKET_CAN_NAME_1, socket_can_init_1,
-		device_pm_control_nop, &socket_can_context_1, NULL,
-		CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		NULL, &socket_can_context_1, NULL,
+		CONFIG_CAN_INIT_PRIORITY,
 		&socket_can_api,
 		CANBUS_RAW_L2, NET_L2_GET_CTX_TYPE(CANBUS_RAW_L2), CAN_MTU);
 
@@ -1249,9 +1255,9 @@ static const struct can_stm32_config can_stm32_cfg_2 = {
 
 static struct can_stm32_data can_stm32_dev_data_2;
 
-DEVICE_DT_DEFINE(DT_NODELABEL(can2), &can_stm32_init, device_pm_control_nop,
+DEVICE_DT_DEFINE(DT_NODELABEL(can2), &can_stm32_init, NULL,
 		    &can_stm32_dev_data_2, &can_stm32_cfg_2,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		    POST_KERNEL, CONFIG_CAN_INIT_PRIORITY,
 		    &can_api_funcs);
 
 static void config_can_2_irq(CAN_TypeDef *can)
@@ -1304,8 +1310,8 @@ static int socket_can_init_2(const struct device *dev)
 }
 
 NET_DEVICE_INIT(socket_can_stm32_2, SOCKET_CAN_NAME_2, socket_can_init_2,
-		device_pm_control_nop, &socket_can_context_2, NULL,
-		CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		NULL, &socket_can_context_2, NULL,
+		CONFIG_CAN_INIT_PRIORITY,
 		&socket_can_api,
 		CANBUS_RAW_L2, NET_L2_GET_CTX_TYPE(CANBUS_RAW_L2), CAN_MTU);
 
