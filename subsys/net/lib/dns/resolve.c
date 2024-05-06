@@ -10,22 +10,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #include <zephyr/types.h>
-#include <random/rand32.h>
+#include <zephyr/random/random.h>
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
 
-#include <sys/crc.h>
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/net_mgmt.h>
-#include <net/dns_resolve.h>
+#include <zephyr/sys/crc.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/dns_resolve.h>
 #include "dns_pack.h"
 #include "dns_internal.h"
+#include "dns_cache.h"
 
 #define DNS_SERVER_COUNT CONFIG_DNS_RESOLVER_MAX_SERVERS
 #define SERVER_COUNT     (DNS_SERVER_COUNT + DNS_MAX_MCAST_SERVERS)
@@ -38,14 +39,7 @@ LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #define DNS_BUF_TIMEOUT K_MSEC(500) /* ms */
 
-/* RFC 1035, 3.1. Name space definitions
- * To simplify implementations, the total length of a domain name (i.e.,
- * label octets and label length octets) is restricted to 255 octets or
- * less.
- */
-#define DNS_MAX_NAME_LEN	255
-
-#define DNS_QUERY_MAX_SIZE	(DNS_MSG_HEADER_SIZE + DNS_MAX_NAME_LEN + \
+#define DNS_QUERY_MAX_SIZE	(DNS_MSG_HEADER_SIZE + CONFIG_DNS_RESOLVER_MAX_QUERY_LEN + \
 				 DNS_QTYPE_LEN + DNS_QCLASS_LEN)
 
 /* This value is recommended by RFC 1035 */
@@ -71,8 +65,12 @@ LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 NET_BUF_POOL_DEFINE(dns_msg_pool, DNS_RESOLVER_BUF_CTR,
 		    DNS_RESOLVER_MAX_BUF_SIZE, 0, NULL);
 
-NET_BUF_POOL_DEFINE(dns_qname_pool, DNS_RESOLVER_BUF_CTR, DNS_MAX_NAME_LEN,
+NET_BUF_POOL_DEFINE(dns_qname_pool, DNS_RESOLVER_BUF_CTR, CONFIG_DNS_RESOLVER_MAX_QUERY_LEN,
 		    0, NULL);
+
+#ifdef CONFIG_DNS_RESOLVER_CACHE
+DNS_CACHE_DEFINE(dns_cache, CONFIG_DNS_RESOLVER_CACHE_MAX_ENTRIES);
+#endif /* CONFIG_DNS_RESOLVER_CACHE */
 
 static struct dns_resolve_context dns_default_ctx;
 
@@ -229,7 +227,7 @@ static int dns_resolve_init_locked(struct dns_resolve_context *ctx,
 
 			dns_postprocess_server(ctx, idx);
 
-			NET_DBG("[%d] %s%s%s", i, log_strdup(servers[i]),
+			NET_DBG("[%d] %s%s%s", i, servers[i],
 				IS_ENABLED(CONFIG_MDNS_RESOLVER) ?
 				(ctx->servers[i].is_mdns ? " mDNS" : "") : "",
 				IS_ENABLED(CONFIG_LLMNR_RESOLVER) ?
@@ -413,7 +411,7 @@ static inline void invoke_query_callback(int status,
 	/* Only notify if the slot is neither released nor in the process of
 	 * being released.
 	 */
-	if (pending_query->query != NULL)  {
+	if (pending_query->query != NULL && pending_query->cb != NULL)  {
 		pending_query->cb(status, info, pending_query->user_data);
 	}
 }
@@ -635,6 +633,10 @@ query_known:
 
 			invoke_query_callback(DNS_EAI_INPROGRESS, &info,
 					      &ctx->queries[*query_idx]);
+#ifdef CONFIG_DNS_RESOLVER_CACHE
+			dns_cache_add(&dns_cache,
+				ctx->queries[*query_idx].query, &info, ttl);
+#endif /* CONFIG_DNS_RESOLVER_CACHE */
 			items++;
 			break;
 
@@ -743,7 +745,8 @@ static int dns_read(struct dns_resolve_context *ctx,
 		goto finished;
 	}
 
-	if (ret < 0) {
+	if (ret < 0 || query_idx < 0 ||
+	    query_idx > CONFIG_DNS_NUM_CONCUR_QUERIES) {
 		goto quit;
 	}
 
@@ -905,10 +908,12 @@ static int dns_write(struct dns_resolve_context *ctx,
 			   dns_qname->len + 2);
 
 	if (IS_ENABLED(CONFIG_NET_IPV6) &&
-	    net_context_get_family(net_ctx) == AF_INET6) {
+	    net_context_get_family(net_ctx) == AF_INET6 &&
+	    hop_limit > 0) {
 		net_context_set_ipv6_hop_limit(net_ctx, hop_limit);
 	} else if (IS_ENABLED(CONFIG_NET_IPV4) &&
-		   net_context_get_family(net_ctx) == AF_INET) {
+		   net_context_get_family(net_ctx) == AF_INET &&
+		   hop_limit > 0) {
 		net_context_set_ipv4_ttl(net_ctx, hop_limit);
 	}
 
@@ -992,7 +997,7 @@ static int dns_resolve_cancel_with_hash(struct dns_resolve_context *ctx,
 	}
 
 	NET_DBG("Cancelling DNS req %u (name %s type %d hash %u)", dns_id,
-		log_strdup(query_name), ctx->queries[i].query_type,
+		query_name, ctx->queries[i].query_type,
 		query_hash);
 
 	dns_resolve_cancel_slot(ctx, i);
@@ -1000,7 +1005,7 @@ static int dns_resolve_cancel_with_hash(struct dns_resolve_context *ctx,
 unlock:
 	k_mutex_unlock(&ctx->lock);
 
-	return 0;
+	return ret;
 }
 
 int dns_resolve_cancel_with_name(struct dns_resolve_context *ctx,
@@ -1058,8 +1063,9 @@ int dns_resolve_cancel(struct dns_resolve_context *ctx, uint16_t dns_id)
 
 static void query_timeout(struct k_work *work)
 {
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct dns_pending_query *pending_query =
-		CONTAINER_OF(work, struct dns_pending_query, timer);
+		CONTAINER_OF(dwork, struct dns_pending_query, timer);
 	int ret;
 
 	/* We have to take the lock as we're inspecting protected content
@@ -1073,7 +1079,7 @@ static void query_timeout(struct k_work *work)
 	 */
 	ret = k_mutex_lock(&pending_query->ctx->lock, K_NO_WAIT);
 	if (ret != 0) {
-		struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+		struct k_work_delayable *dwork2 = k_work_delayable_from_work(work);
 
 		/*
 		 * Reschedule query timeout handler with some delay, so that all
@@ -1083,7 +1089,7 @@ static void query_timeout(struct k_work *work)
 		 * Timeout value was arbitrarily chosen and can be updated in
 		 * future if needed.
 		 */
-		k_work_reschedule(dwork, K_MSEC(10));
+		k_work_reschedule(dwork2, K_MSEC(10));
 		return;
 	}
 
@@ -1119,6 +1125,9 @@ int dns_resolve_name(struct dns_resolve_context *ctx,
 	int failure = 0;
 	bool mdns_query = false;
 	uint8_t hop_limit;
+#ifdef CONFIG_DNS_RESOLVER_CACHE
+	struct dns_addrinfo cached_info[CONFIG_DNS_RESOLVER_AI_MAX_ENTRIES] = {0};
+#endif /* CONFIG_DNS_RESOLVER_CACHE */
 
 	if (!ctx || !query || !cb) {
 		return -EINVAL;
@@ -1180,6 +1189,21 @@ int dns_resolve_name(struct dns_resolve_context *ctx,
 	}
 
 try_resolve:
+#ifdef CONFIG_DNS_RESOLVER_CACHE
+	ret = dns_cache_find(&dns_cache, query, cached_info, sizeof(cached_info));
+	if (ret > 0) {
+		/* The query was cached, no
+		 * need to continue further.
+		 */
+		for (size_t cache_index = 0; cache_index < ret; cache_index++) {
+			cb(DNS_EAI_INPROGRESS, &cached_info[cache_index], user_data);
+		}
+		cb(DNS_EAI_ALLDONE, NULL, user_data);
+
+		return 0;
+	}
+#endif /* CONFIG_DNS_RESOLVER_CACHE */
+
 	k_mutex_lock(&ctx->lock, K_FOREVER);
 
 	if (ctx->state != DNS_RESOLVE_CONTEXT_ACTIVE) {
@@ -1216,12 +1240,12 @@ try_resolve:
 	}
 
 	ret = dns_msg_pack_qname(&dns_qname->len, dns_qname->data,
-				DNS_MAX_NAME_LEN, ctx->queries[i].query);
+				CONFIG_DNS_RESOLVER_MAX_QUERY_LEN, ctx->queries[i].query);
 	if (ret < 0) {
 		goto quit;
 	}
 
-	ctx->queries[i].id = sys_rand32_get();
+	ctx->queries[i].id = sys_rand16_get();
 
 	/* If mDNS is enabled, then send .local queries only to multicast
 	 * address. For mDNS the id should be set to 0, see RFC 6762 ch. 18.1
@@ -1384,6 +1408,59 @@ int dns_resolve_close(struct dns_resolve_context *ctx)
 	return ret;
 }
 
+static bool dns_server_exists(struct dns_resolve_context *ctx,
+			      const struct sockaddr *addr)
+{
+	for (int i = 0; i < SERVER_COUNT; i++) {
+		if (IS_ENABLED(CONFIG_NET_IPV4) && (addr->sa_family == AF_INET) &&
+		    (ctx->servers[i].dns_server.sa_family == AF_INET)) {
+			if (net_ipv4_addr_cmp(&net_sin(addr)->sin_addr,
+					      &net_sin(&ctx->servers[i].dns_server)->sin_addr)) {
+				return true;
+			}
+		}
+
+		if (IS_ENABLED(CONFIG_NET_IPV6) && (addr->sa_family == AF_INET6) &&
+		    (ctx->servers[i].dns_server.sa_family == AF_INET6)) {
+			if (net_ipv6_addr_cmp(&net_sin6(addr)->sin6_addr,
+					      &net_sin6(&ctx->servers[i].dns_server)->sin6_addr)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+static bool dns_servers_exists(struct dns_resolve_context *ctx,
+			       const char *servers[],
+			       const struct sockaddr *servers_sa[])
+{
+	if (servers) {
+		for (int i = 0; i < SERVER_COUNT && servers[i]; i++) {
+			struct sockaddr addr;
+
+			if (!net_ipaddr_parse(servers[i], strlen(servers[i]), &addr)) {
+				continue;
+			}
+
+			if (!dns_server_exists(ctx, &addr)) {
+				return false;
+			}
+		}
+	}
+
+	if (servers_sa) {
+		for (int i = 0; i < SERVER_COUNT && servers_sa[i]; i++) {
+			if (!dns_server_exists(ctx, servers_sa[i])) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 int dns_resolve_reconfigure(struct dns_resolve_context *ctx,
 			    const char *servers[],
 			    const struct sockaddr *servers_sa[])
@@ -1395,6 +1472,12 @@ int dns_resolve_reconfigure(struct dns_resolve_context *ctx,
 	}
 
 	k_mutex_lock(&ctx->lock, K_FOREVER);
+
+	if (dns_servers_exists(ctx, servers, servers_sa)) {
+		/* DNS servers did not change. */
+		err = 0;
+		goto unlock;
+	}
 
 	if (ctx->state == DNS_RESOLVE_CONTEXT_DEACTIVATING) {
 		err = -EBUSY;
@@ -1423,12 +1506,12 @@ struct dns_resolve_context *dns_resolve_get_default(void)
 	return &dns_default_ctx;
 }
 
-void dns_init_resolver(void)
+int dns_resolve_init_default(struct dns_resolve_context *ctx)
 {
+	int ret = 0;
 #if defined(CONFIG_DNS_SERVER_IP_ADDRESSES)
 	static const char *dns_servers[SERVER_COUNT + 1];
 	int count = DNS_SERVER_COUNT;
-	int ret;
 
 	if (count > 5) {
 		count = 5;
@@ -1495,9 +1578,22 @@ void dns_init_resolver(void)
 
 	dns_servers[SERVER_COUNT] = NULL;
 
-	ret = dns_resolve_init(dns_resolve_get_default(), dns_servers, NULL);
+	ret = dns_resolve_init(ctx, dns_servers, NULL);
 	if (ret < 0) {
 		NET_WARN("Cannot initialize DNS resolver (%d)", ret);
 	}
+#else
+	/* We must always call init even if there are no servers configured so
+	 * that DNS mutex gets initialized properly.
+	 */
+	(void)dns_resolve_init(dns_resolve_get_default(), NULL, NULL);
 #endif
+	return ret;
 }
+
+#ifdef CONFIG_DNS_RESOLVER_AUTO_INIT
+void dns_init_resolver(void)
+{
+	dns_resolve_init_default(dns_resolve_get_default());
+}
+#endif /* CONFIG_DNS_RESOLVER_AUTO_INIT */

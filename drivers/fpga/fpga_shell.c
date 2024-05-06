@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/printk.h>
-#include <shell/shell.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/shell/shell.h>
 #include <version.h>
 #include <stdlib.h>
-#include <drivers/fpga.h>
+#include <zephyr/drivers/fpga.h>
 
 static int parse_common_args(const struct shell *sh, char **argv,
 			     const struct device **dev)
@@ -93,8 +93,11 @@ static int cmd_load(const struct shell *sh, size_t argc, char **argv)
 
 	shell_print(sh, "%s: loading bitstream", dev->name);
 
-	fpga_load(dev, (uint32_t *)strtol(argv[2], NULL, 0),
-		  (uint32_t)atoi(argv[3]));
+	err = fpga_load(dev, (uint32_t *)strtol(argv[2], NULL, 0),
+			(uint32_t)atoi(argv[3]));
+	if (err) {
+		shell_error(sh, "Error: %d", err);
+	}
 
 	return err;
 }

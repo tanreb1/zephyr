@@ -8,18 +8,18 @@
 
 #include <zephyr/types.h>
 #include <stddef.h>
-#include <sys/printk.h>
-#include <sys/util.h>
-#include <sys/byteorder.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/byteorder.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/hci_vs.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_vs.h>
 
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/gatt.h>
-#include <bluetooth/services/hrs.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/services/hrs.h>
 
 static struct bt_conn *default_conn;
 static uint16_t default_conn_handle;
@@ -29,6 +29,10 @@ static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HRS_VAL)),
 };
 
+static const struct bt_data sd[] = {
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+};
+
 #define DEVICE_NAME CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
 #define DEVICE_BEACON_TXPOWER_NUM  8
@@ -36,10 +40,10 @@ static const struct bt_data ad[] = {
 static struct k_thread pwr_thread_data;
 static K_THREAD_STACK_DEFINE(pwr_thread_stack, 512);
 
-static const int8_t txp[DEVICE_BEACON_TXPOWER_NUM] = {4, 0, -3, -8,
-						    -15, -18, -23, -30};
+static const int8_t txpower[DEVICE_BEACON_TXPOWER_NUM] = {4, 0, -3, -8,
+							  -15, -18, -23, -30};
 static const struct bt_le_adv_param *param =
-	BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_USE_NAME,
+	BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE,
 			0x0020, 0x0020, NULL);
 
 static void read_conn_rssi(uint16_t handle, int8_t *rssi)
@@ -206,7 +210,7 @@ static void bt_ready(int err)
 
 	/* Start advertising */
 	err = bt_le_adv_start(param, ad, ARRAY_SIZE(ad),
-			      NULL, 0);
+			      sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
 		return;
@@ -235,9 +239,9 @@ void modulate_tx_power(void *p1, void *p2, void *p3)
 
 	while (1) {
 		if (!default_conn) {
-			printk("Set Tx power level to %d\n", txp[idx]);
+			printk("Set Tx power level to %d\n", txpower[idx]);
 			set_tx_power(BT_HCI_VS_LL_HANDLE_TYPE_ADV,
-				     0, txp[idx]);
+				     0, txpower[idx]);
 
 			k_sleep(K_SECONDS(5));
 
@@ -277,7 +281,7 @@ void modulate_tx_power(void *p1, void *p2, void *p3)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	int8_t txp_get = 0xFF;
 	int err;
@@ -312,4 +316,5 @@ void main(void)
 		hrs_notify();
 		k_sleep(K_SECONDS(2));
 	}
+	return 0;
 }

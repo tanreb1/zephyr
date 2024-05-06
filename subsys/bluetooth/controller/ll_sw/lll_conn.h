@@ -87,25 +87,17 @@ struct lll_conn {
 	};
 
 #if defined(CONFIG_BT_CTLR_DATA_LENGTH)
-
-#ifdef CONFIG_BT_LL_SW_LLCP_LEGACY
-	uint16_t max_tx_octets;
-	uint16_t max_rx_octets;
-
-#if defined(CONFIG_BT_CTLR_PHY)
-	uint16_t max_tx_time;
-	uint16_t max_rx_time;
-#endif /* CONFIG_BT_CTLR_PHY */
-
-#else /* CONFIG_BT_LL_SW_LLCP_LEGACY */
 	struct {
 		struct data_pdu_length local;
 		struct data_pdu_length remote;
 		struct data_pdu_length eff;
+#if defined(CONFIG_BT_CTLR_PHY)
+		uint16_t default_tx_time;
+#endif
+		uint16_t default_tx_octets;
 		uint8_t update;
 	} dle;
 #endif /* CONFIG_BT_CTLR_DATA_LENGTH */
-#endif/* CONFIG_BT_LL_SW_LLCP_LEGACY */
 
 #if defined(CONFIG_BT_CTLR_PHY)
 	uint8_t phy_tx:3;
@@ -132,6 +124,13 @@ struct lll_conn {
 	struct ccm ccm_tx;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 
+#if defined(CONFIG_BT_CTLR_SLOT_RESERVATION_UPDATE)
+#if defined(CONFIG_BT_CTLR_DATA_LENGTH) || defined(CONFIG_BT_CTLR_PHY)
+	uint8_t evt_len_upd:1;
+	uint8_t evt_len_upd_delayed:1;
+#endif /* CONFIG_BT_CTLR_DATA_LENGTH || CONFIG_BT_CTLR_PHY */
+#endif /* CONFIG_BT_CTLR_SLOT_RESERVATION_UPDATE */
+
 #if defined(CONFIG_BT_CTLR_CONN_RSSI)
 	uint8_t  rssi_latest;
 #if defined(CONFIG_BT_CTLR_CONN_RSSI_EVENT)
@@ -148,9 +147,12 @@ struct lll_conn {
 	int8_t tx_pwr_lvl;
 #endif
 
-#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_REQ)
-	struct lll_df_conn_rx_params df_rx_params;
-#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_REQ */
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_RX)
+	struct lll_df_conn_rx_cfg df_rx_cfg;
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RX */
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_TX)
+	struct lll_df_conn_tx_cfg df_tx_cfg;
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_TX */
 };
 
 int lll_conn_init(void);
@@ -166,5 +168,7 @@ void lll_conn_tx_pkt_set(struct lll_conn *lll, struct pdu_data *pdu_data_tx);
 void lll_conn_pdu_tx_prep(struct lll_conn *lll, struct pdu_data **pdu_data_tx);
 uint8_t lll_conn_force_md_cnt_set(uint8_t force_md_cnt);
 
+extern struct lll_conn *ull_conn_lll_get(uint16_t handle);
+extern void ull_conn_lll_tx_demux_sched(struct lll_conn *lll);
 extern void ull_conn_lll_ack_enqueue(uint16_t handle, struct node_tx *tx);
 extern uint16_t ull_conn_lll_max_tx_octets_get(struct lll_conn *lll);

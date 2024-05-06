@@ -8,14 +8,14 @@ from west import log
 
 from zspdx.util import getHashes
 
-# Output tag-value SPDX 2.2 content for the given Relationship object.
+# Output tag-value SPDX 2.3 content for the given Relationship object.
 # Arguments:
 #   1) f: file handle for SPDX document
 #   2) rln: Relationship object being described
 def writeRelationshipSPDX(f, rln):
     f.write(f"Relationship: {rln.refA} {rln.rlnType} {rln.refB}\n")
 
-# Output tag-value SPDX 2.2 content for the given File object.
+# Output tag-value SPDX 2.3 content for the given File object.
 # Arguments:
 #   1) f: file handle for SPDX document
 #   2) bf: File object being described
@@ -42,7 +42,7 @@ FileChecksum: SHA1: {bf.sha1}
             writeRelationshipSPDX(f, rln)
         f.write("\n")
 
-# Output tag-value SPDX 2.2 content for the given Package object.
+# Output tag-value SPDX 2.3 content for the given Package object.
 # Arguments:
 #   1) f: file handle for SPDX document
 #   2) pkg: Package object being described
@@ -54,14 +54,20 @@ SPDXID: {pkg.cfg.spdxID}
 PackageDownloadLocation: NOASSERTION
 PackageLicenseConcluded: {pkg.concludedLicense}
 """)
-    for licFromFiles in pkg.licenseInfoFromFiles:
-        f.write(f"PackageLicenseInfoFromFiles: {licFromFiles}\n")
     f.write(f"""PackageLicenseDeclared: {pkg.cfg.declaredLicense}
 PackageCopyrightText: {pkg.cfg.copyrightText}
 """)
 
+    if pkg.cfg.primaryPurpose != "":
+        f.write(f"PrimaryPackagePurpose: {pkg.cfg.primaryPurpose}\n")
+
     # flag whether files analyzed / any files present
     if len(pkg.files) > 0:
+        if len(pkg.licenseInfoFromFiles) > 0:
+            for licFromFiles in pkg.licenseInfoFromFiles:
+                f.write(f"PackageLicenseInfoFromFiles: {licFromFiles}\n")
+        else:
+            f.write(f"PackageLicenseInfoFromFiles: NOASSERTION\n")
         f.write(f"FilesAnalyzed: true\nPackageVerificationCode: {pkg.verificationCode}\n\n")
     else:
         f.write(f"FilesAnalyzed: false\nPackageComment: Utility target; no files\n\n")
@@ -79,7 +85,7 @@ PackageCopyrightText: {pkg.cfg.copyrightText}
         for bf in bfs:
             writeFileSPDX(f, bf)
 
-# Output tag-value SPDX 2.2 content for a custom license.
+# Output tag-value SPDX 2.3 content for a custom license.
 # Arguments:
 #   1) f: file handle for SPDX document
 #   2) lic: custom license ID being described
@@ -90,12 +96,12 @@ LicenseName: {lic}
 LicenseComment: Corresponds to the license ID `{lic}` detected in an SPDX-License-Identifier: tag.
 """)
 
-# Output tag-value SPDX 2.2 content for the given Document object.
+# Output tag-value SPDX 2.3 content for the given Document object.
 # Arguments:
 #   1) f: file handle for SPDX document
 #   2) doc: Document object being described
 def writeDocumentSPDX(f, doc):
-    f.write(f"""SPDXVersion: SPDX-2.2
+    f.write(f"""SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
 DocumentName: {doc.cfg.name}
@@ -125,7 +131,7 @@ Created: {datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}
 
     # write other license info, if any
     if len(doc.customLicenseIDs) > 0:
-        for lic in list(doc.customLicenseIDs).sort():
+        for lic in sorted(list(doc.customLicenseIDs)):
             writeOtherLicenseSPDX(f, lic)
 
 # Open SPDX document file for writing, write the document, and calculate

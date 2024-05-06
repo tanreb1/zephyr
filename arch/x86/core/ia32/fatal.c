@@ -9,17 +9,17 @@
  * @brief Kernel fatal error handler
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <kernel_internal.h>
-#include <drivers/interrupt_controller/sysapic.h>
-#include <arch/x86/ia32/segmentation.h>
-#include <arch/syscall.h>
+#include <zephyr/drivers/interrupt_controller/sysapic.h>
+#include <zephyr/arch/x86/ia32/segmentation.h>
+#include <zephyr/arch/syscall.h>
 #include <ia32/exception.h>
 #include <inttypes.h>
-#include <exc_handle.h>
-#include <logging/log.h>
+#include <zephyr/arch/common/exc_handle.h>
+#include <zephyr/logging/log.h>
 #include <x86_mmu.h>
-#include <sys/mem_manage.h>
+#include <zephyr/kernel/mm.h>
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
@@ -206,7 +206,7 @@ static FUNC_NORETURN __used void df_handler_top(void)
 	_df_esf.eflags = _main_tss.eflags;
 
 	/* Restore the main IA task to a runnable state */
-	_main_tss.esp = (uint32_t)(Z_KERNEL_STACK_BUFFER(
+	_main_tss.esp = (uint32_t)(K_KERNEL_STACK_BUFFER(
 		z_interrupt_stacks[0]) + CONFIG_ISR_STACK_SIZE);
 	_main_tss.cs = CODE_SEG;
 	_main_tss.ds = DATA_SEG;

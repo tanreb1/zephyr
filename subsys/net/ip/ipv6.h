@@ -15,10 +15,10 @@
 
 #include <zephyr/types.h>
 
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/net_context.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_context.h>
 
 #include "icmpv6.h"
 #include "nbr.h"
@@ -29,6 +29,10 @@
 #define NET_IPV6_DEFAULT_PREFIX_LEN 64
 
 #define NET_MAX_RS_COUNT 3
+
+#define NET_IPV6_DSCP_MASK 0xFC
+#define NET_IPV6_DSCP_OFFSET 2
+#define NET_IPV6_ECN_MASK 0x03
 
 /**
  * @brief Bitmaps for IPv6 extension header processing
@@ -205,7 +209,14 @@ static inline int net_ipv6_finalize(struct net_pkt *pkt,
 #if defined(CONFIG_NET_IPV6_MLD)
 int net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr);
 #else
-#define net_ipv6_mld_join(...)
+static inline int
+net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(addr);
+
+	return -ENOTSUP;
+}
 #endif /* CONFIG_NET_IPV6_MLD */
 
 /**
@@ -219,7 +230,14 @@ int net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr);
 #if defined(CONFIG_NET_IPV6_MLD)
 int net_ipv6_mld_leave(struct net_if *iface, const struct in6_addr *addr);
 #else
-#define net_ipv6_mld_leave(...)
+static inline int
+net_ipv6_mld_leave(struct net_if *iface, const struct in6_addr *addr)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(addr);
+
+	return -ENOTSUP;
+}
 #endif /* CONFIG_NET_IPV6_MLD */
 
 /**
@@ -251,6 +269,21 @@ static inline enum net_verdict net_ipv6_prepare_for_send(struct net_pkt *pkt)
 	return NET_OK;
 }
 #endif
+
+/**
+ * @brief Lock IPv6 Neighbor table mutex
+ *
+ * Neighbor table mutex is used by IPv6 Neighbor cache and IPv6 Routing module.
+ * Mutex shall be held whenever accessing or manipulating neighbor or routing
+ * table entries (for example when obtaining a pointer to the neighbor table
+ * entry). Neighbor and Routing API functions will lock the mutex when called.
+ */
+void net_ipv6_nbr_lock(void);
+
+/**
+ * @brief Unlock IPv6 Neighbor table mutex
+ */
+void net_ipv6_nbr_unlock(void);
 
 /**
  * @brief Look for a neighbor from it's address on an iface
@@ -368,6 +401,29 @@ static inline void net_ipv6_nbr_foreach(net_nbr_cb_t cb, void *user_data)
 #endif /* CONFIG_NET_IPV6_NBR_CACHE */
 
 /**
+ * @brief Provide a reachability hint for IPv6 Neighbor Discovery.
+ *
+ * This function is intended for upper-layer protocols to inform the IPv6
+ * Neighbor Discovery process about the active link to a specific neighbor.
+ * By signaling recent "forward progress" event, such as the reception of
+ * an ACK, this function can help reducing unnecessary ND traffic as per the
+ * guidelines in RFC 4861 (section 7.3).
+ *
+ * @param iface A pointer to the network interface.
+ * @param ipv6_addr Pointer to the IPv6 address of the neighbor node.
+ */
+#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
+void net_ipv6_nbr_reachability_hint(struct net_if *iface, const struct in6_addr *ipv6_addr);
+#else
+static inline void net_ipv6_nbr_reachability_hint(struct net_if *iface,
+						  const struct in6_addr *ipv6_addr)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(ipv6_addr);
+}
+#endif
+
+/**
  * @brief Set the neighbor reachable timer.
  *
  * @param iface A valid pointer on a network interface
@@ -480,5 +536,64 @@ void net_ipv6_mld_init(void);
 #define net_ipv6_init(...)
 #define net_ipv6_nbr_init(...)
 #endif
+
+/**
+ * @brief Decode DSCP value from TC field.
+ *
+ * @param tc TC field value from the IPv6 header.
+ *
+ * @return Decoded DSCP value.
+ */
+static inline uint8_t net_ipv6_get_dscp(uint8_t tc)
+{
+	return (tc & NET_IPV6_DSCP_MASK) >> NET_IPV6_DSCP_OFFSET;
+}
+
+/**
+ * @brief Encode DSCP value into TC field.
+ *
+ * @param tc A pointer to the TC field.
+ * @param dscp DSCP value to set.
+ */
+static inline void net_ipv6_set_dscp(uint8_t *tc, uint8_t dscp)
+{
+	*tc &= ~NET_IPV6_DSCP_MASK;
+	*tc |= (dscp << NET_IPV6_DSCP_OFFSET) & NET_IPV6_DSCP_MASK;
+}
+
+/**
+ * @brief Convert DSCP value to priority.
+ *
+ * @param dscp DSCP value.
+ */
+static inline uint8_t net_ipv6_dscp_to_priority(uint8_t dscp)
+{
+	return dscp >> 3;
+}
+
+/**
+ * @brief Decode ECN value from TC field.
+ *
+ * @param tc TC field value from the IPv6 header.
+ *
+ * @return Decoded ECN value.
+ */
+static inline uint8_t net_ipv6_get_ecn(uint8_t tc)
+{
+	return tc & NET_IPV6_ECN_MASK;
+}
+
+/**
+ * @brief Encode ECN value into TC field.
+ *
+ * @param tc A pointer to the TC field.
+ * @param ecn ECN value to set.
+ */
+static inline void net_ipv6_set_ecn(uint8_t *tc, uint8_t ecn)
+{
+	*tc &= ~NET_IPV6_ECN_MASK;
+	*tc |= ecn & NET_IPV6_ECN_MASK;
+}
+
 
 #endif /* __IPV6_H */

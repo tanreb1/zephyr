@@ -9,7 +9,7 @@
  * @brief Internal kernel APIs implemented at the architecture layer.
  *
  * Not all architecture-specific defines are here, APIs that are used
- * by public functions and macros are defined in include/sys/arch_interface.h.
+ * by public functions and macros are defined in include/zephyr/arch/arch_interface.h.
  *
  * For all inline functions prototyped here, the implementation is expected
  * to be provided by arch/ARCH/include/kernel_arch_func.h
@@ -17,8 +17,8 @@
 #ifndef ZEPHYR_KERNEL_INCLUDE_KERNEL_ARCH_INTERFACE_H_
 #define ZEPHYR_KERNEL_INCLUDE_KERNEL_ARCH_INTERFACE_H_
 
-#include <kernel.h>
-#include <sys/arch_interface.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/arch_interface.h>
 
 #ifndef _ASMLANGUAGE
 
@@ -37,7 +37,7 @@ extern "C" {
  * @param usec_to_wait Wait period, in microseconds
  */
 void arch_busy_wait(uint32_t usec_to_wait);
-#endif
+#endif /* CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT */
 
 /** @} */
 
@@ -154,7 +154,7 @@ int arch_swap(unsigned int key);
  */
 static ALWAYS_INLINE void
 arch_thread_return_value_set(struct k_thread *thread, unsigned int value);
-#endif /* CONFIG_USE_SWITCH i*/
+#endif /* CONFIG_USE_SWITCH */
 
 #ifdef CONFIG_ARCH_HAS_CUSTOM_SWAP_TO_MAIN
 /**
@@ -192,7 +192,7 @@ int arch_float_disable(struct k_thread *thread);
  *
  * The function is used to enable the preservation of floating
  * point context information for a particular thread.
- * This API depends on each architecture implimentation. If the architecture
+ * This API depends on each architecture implementation. If the architecture
  * does not support enabling, this API will always be failed.
  *
  * The @a options parameter indicates which floating point register sets will
@@ -245,7 +245,6 @@ static inline bool arch_is_in_isr(void);
  * @{
  */
 
-#ifdef CONFIG_MMU
 /**
  * Map physical memory into the virtual address space
  *
@@ -335,21 +334,18 @@ void arch_mem_unmap(void *addr, size_t size);
  */
 int arch_page_phys_get(void *virt, uintptr_t *phys);
 
-#ifdef CONFIG_ARCH_HAS_RESERVED_PAGE_FRAMES
 /**
  * Update page frame database with reserved pages
  *
  * Some page frames within system RAM may not be available for use. A good
  * example of this is reserved regions in the first megabyte on PC-like systems.
  *
- * Implementations of this function should mark all relavent entries in
+ * Implementations of this function should mark all relevant entries in
  * z_page_frames with K_PAGE_FRAME_RESERVED. This function is called at
  * early system initialization with mm_lock held.
  */
 void arch_reserved_pages_update(void);
-#endif /* ARCH_HAS_RESERVED_PAGE_FRAMES */
 
-#ifdef CONFIG_DEMAND_PAGING
 /**
  * Update all page tables for a paged-out data page
  *
@@ -406,9 +402,17 @@ void arch_mem_page_in(void *addr, uintptr_t phys);
  */
 void arch_mem_scratch(uintptr_t phys);
 
+/**
+ * Status of a particular page location.
+ */
 enum arch_page_location {
+	/** The page has been evicted to the backing store. */
 	ARCH_PAGE_LOCATION_PAGED_OUT,
+
+	/** The page is resident in memory. */
 	ARCH_PAGE_LOCATION_PAGED_IN,
+
+	/** The page is not mapped. */
 	ARCH_PAGE_LOCATION_BAD
 };
 
@@ -526,8 +530,7 @@ enum arch_page_location arch_page_location_get(void *addr, uintptr_t *location);
  */
 uintptr_t arch_page_info_get(void *addr, uintptr_t *location,
 			     bool clear_accessed);
-#endif /* CONFIG_DEMAND_PAGING */
-#endif /* CONFIG_MMU */
+
 /** @} */
 
 /**
@@ -557,11 +560,8 @@ int arch_printk_char_out(int c);
 /**
  * Architecture-specific kernel initialization hook
  *
- * This function is invoked near the top of _Cstart, for additional
+ * This function is invoked near the top of z_cstart, for additional
  * architecture-specific setup before the rest of the kernel is brought up.
- *
- * TODO: Deprecate, most arches are using a prep_c() function to do the same
- * thing in a simpler way
  */
 static inline void arch_kernel_init(void);
 
@@ -602,7 +602,7 @@ uint16_t arch_coredump_tgt_code_get(void);
  * @brief Setup Architecture-specific TLS area in stack
  *
  * This sets up the stack area for thread local storage.
- * The structure inside in area is architecture specific.
+ * The structure inside TLS area is architecture specific.
  *
  * @param new_thread New thread object
  * @param stack_ptr Stack pointer

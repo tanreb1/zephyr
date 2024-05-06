@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <ksched.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
-#include <exc_handle.h>
-#include <logging/log.h>
+#include <zephyr/arch/common/exc_handle.h>
+#include <zephyr/logging/log.h>
 #include <x86_mmu.h>
 #include <mmu.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
@@ -33,6 +33,8 @@ FUNC_NORETURN void arch_system_halt(unsigned int reason)
 }
 #endif
 
+#ifdef CONFIG_THREAD_STACK_INFO
+
 static inline uintptr_t esf_get_sp(const z_arch_esf_t *esf)
 {
 #ifdef CONFIG_X86_64
@@ -42,16 +44,6 @@ static inline uintptr_t esf_get_sp(const z_arch_esf_t *esf)
 #endif
 }
 
-static inline uintptr_t esf_get_code(const z_arch_esf_t *esf)
-{
-#ifdef CONFIG_X86_64
-	return esf->code;
-#else
-	return esf->errorCode;
-#endif
-}
-
-#ifdef CONFIG_THREAD_STACK_INFO
 __pinned_func
 bool z_x86_check_stack_bounds(uintptr_t addr, size_t size, uint16_t cs)
 {
@@ -67,7 +59,7 @@ bool z_x86_check_stack_bounds(uintptr_t addr, size_t size, uint16_t cs)
 #else
 		cpu_id = 0;
 #endif
-		start = (uintptr_t)Z_KERNEL_STACK_BUFFER(
+		start = (uintptr_t)K_KERNEL_STACK_BUFFER(
 		    z_interrupt_stacks[cpu_id]);
 		end = start + CONFIG_ISR_STACK_SIZE;
 #ifdef CONFIG_USERSPACE
@@ -80,7 +72,7 @@ bool z_x86_check_stack_bounds(uintptr_t addr, size_t size, uint16_t cs)
 		 * If we get here, we must have been doing a syscall, check
 		 * privilege elevation stack bounds
 		 */
-		start = _current->stack_info.start - CONFIG_MMU_PAGE_SIZE;
+		start = _current->stack_info.start - CONFIG_PRIVILEGED_STACK_SIZE;
 		end = _current->stack_info.start;
 #endif /* CONFIG_USERSPACE */
 	} else {
@@ -94,7 +86,51 @@ bool z_x86_check_stack_bounds(uintptr_t addr, size_t size, uint16_t cs)
 }
 #endif
 
+#ifdef CONFIG_THREAD_STACK_MEM_MAPPED
+/**
+ * Check if the fault is in the guard pages.
+ *
+ * @param addr Address to be tested.
+ *
+ * @return True Address is in guard pages, false otherwise.
+ */
+__pinned_func
+bool z_x86_check_guard_page(uintptr_t addr)
+{
+	struct k_thread *thread = _current;
+	uintptr_t start, end;
+
+	/* Front guard size - before thread stack area */
+	start = (uintptr_t)thread->stack_info.mapped.addr - CONFIG_MMU_PAGE_SIZE;
+	end = (uintptr_t)thread->stack_info.mapped.addr;
+
+	if ((addr >= start) && (addr < end)) {
+		return true;
+	}
+
+	/* Rear guard size - after thread stack area */
+	start = (uintptr_t)thread->stack_info.mapped.addr + thread->stack_info.mapped.sz;
+	end = start + CONFIG_MMU_PAGE_SIZE;
+
+	if ((addr >= start) && (addr < end)) {
+		return true;
+	}
+
+	return false;
+}
+#endif /* CONFIG_THREAD_STACK_MEM_MAPPED */
+
 #ifdef CONFIG_EXCEPTION_DEBUG
+
+static inline uintptr_t esf_get_code(const z_arch_esf_t *esf)
+{
+#ifdef CONFIG_X86_64
+	return esf->code;
+#else
+	return esf->errorCode;
+#endif
+}
+
 #if defined(CONFIG_X86_EXCEPTION_STACK_TRACE)
 struct stack_frame {
 	uintptr_t next;
@@ -439,6 +475,14 @@ void z_x86_page_fault_handler(z_arch_esf_t *esf)
 		z_x86_fatal_error(K_ERR_STACK_CHK_FAIL, esf);
 	}
 #endif
+#ifdef CONFIG_THREAD_STACK_MEM_MAPPED
+	void *fault_addr = z_x86_cr2_get();
+
+	if (z_x86_check_guard_page((uintptr_t)fault_addr)) {
+		z_x86_fatal_error(K_ERR_STACK_CHK_FAIL, esf);
+	}
+#endif
+
 	z_x86_fatal_error(K_ERR_CPU_EXCEPTION, esf);
 	CODE_UNREACHABLE;
 }

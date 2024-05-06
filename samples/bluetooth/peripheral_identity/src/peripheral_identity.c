@@ -8,10 +8,10 @@
  */
 
 #include <stddef.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/conn.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
 
 static struct k_work work_adv_start;
 static uint8_t volatile conn_count;
@@ -22,6 +22,10 @@ static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
 };
 
+static const struct bt_data sd[] = {
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+};
+
 static void adv_start(struct k_work *work)
 {
 	struct bt_le_adv_param adv_param = {
@@ -29,7 +33,6 @@ static void adv_start(struct k_work *work)
 		.sid = 0,
 		.secondary_max_skip = 0,
 		.options = (BT_LE_ADV_OPT_CONNECTABLE |
-			    BT_LE_ADV_OPT_USE_NAME |
 			    BT_LE_ADV_OPT_ONE_TIME),
 		.interval_min = 0x0020, /* 20 ms */
 		.interval_max = 0x0020, /* 20 ms */
@@ -57,7 +60,7 @@ static void adv_start(struct k_work *work)
 	printk("Using current id: %u\n", id_current);
 	adv_param.id = id_current;
 
-	err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), NULL, 0);
+	err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
 		return;
@@ -99,6 +102,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	printk("Disconnected %s (reason 0x%02x)\n", addr, reason);
 
 	if ((conn_count == 1U) && is_disconnecting) {
+		is_disconnecting = false;
 		k_work_submit(&work_adv_start);
 	}
 	conn_count--;
@@ -256,7 +260,7 @@ int init_peripheral(uint8_t iterations)
 
 	/* wait for connection attempts on all identities */
 	do {
-		k_sleep(K_MSEC(100));
+		k_sleep(K_MSEC(10));
 
 		id_count = 0xFF;
 		bt_id_get(NULL, &id_count);
@@ -279,10 +283,9 @@ int init_peripheral(uint8_t iterations)
 
 			printk("Wait for disconnections...\n");
 			is_disconnecting = true;
-			while (conn_count != 0) {
+			while (is_disconnecting) {
 				k_sleep(K_MSEC(10));
 			}
-			is_disconnecting = false;
 			printk("All disconnected.\n");
 
 			continue;
@@ -296,11 +299,11 @@ int init_peripheral(uint8_t iterations)
 
 			continue;
 		} else {
-			uint16_t wait = 1200U;
+			uint16_t wait = 6200U;
 
-			/* Maximum duration without connection count change, central
-			 * waiting before disconnecting all its connections plus few
-			 * seconds of margin.
+			/* Maximum duration without connection count change,
+			 * central waiting before disconnecting all its
+			 * connections plus few seconds of margin.
 			 */
 			while ((prev_count == conn_count) && wait) {
 				wait--;

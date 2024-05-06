@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <ksched.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
 #include <offsets_short.h>
 #include <x86_mmu.h>
 
-extern void x86_sse_init(struct k_thread *); /* in locore.S */
+extern void x86_sse_init(struct k_thread *thread); /* in locore.S */
 
 /* FIXME: This exists to make space for a "return address" at the top
  * of the stack.  Obviously this is unused at runtime, but is required
@@ -32,7 +32,10 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	void *switch_entry;
 	struct x86_initial_frame *iframe;
 
-#if CONFIG_X86_STACK_PROTECTION
+#if defined(CONFIG_X86_STACK_PROTECTION) && !defined(CONFIG_THREAD_STACK_MEM_MAPPED)
+	/* This unconditionally set the first page of stack as guard page,
+	 * which is only needed if the stack is not memory mapped.
+	 */
 	z_x86_set_stack_guard(stack);
 #endif
 #ifdef CONFIG_USERSPACE

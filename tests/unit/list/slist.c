@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <sys/slist.h>
+#include <zephyr/ztest.h>
+#include <zephyr/sys/slist.h>
 
 static sys_slist_t test_list;
 static sys_slist_t append_list;
@@ -37,6 +37,10 @@ static inline bool verify_emptyness(sys_slist_t *list)
 	}
 
 	if (sys_slist_peek_tail(list)) {
+		return false;
+	}
+
+	if (sys_slist_len(list) != 0) {
 		return false;
 	}
 
@@ -95,6 +99,10 @@ static inline bool verify_content_amount(sys_slist_t *list, int amount)
 	}
 
 	if (!sys_slist_peek_tail(list)) {
+		return false;
+	}
+
+	if (sys_slist_len(list) != amount) {
 		return false;
 	}
 
@@ -176,9 +184,9 @@ static inline bool verify_tail_head(sys_slist_t *list,
  * @see sys_slist_init(), sys_slist_append(),
  * sys_slist_find_and_remove(), sys_slist_prepend(),
  * sys_slist_remove(), sys_slist_get(), sys_slist_get_not_empty(),
- * sys_slist_append_list(), sys_slist_merge_list()
+ * sys_slist_append_list(), sys_slist_merge_list(), sys_slist_find()
  */
-void test_slist(void)
+ZTEST(dlist_api, test_slist)
 {
 	sys_slist_init(&test_list);
 
@@ -193,6 +201,13 @@ void test_slist(void)
 	zassert_true((verify_tail_head(&test_list, &test_node_1.node,
 				       &test_node_1.node, true)),
 		     "test_list head/tail are wrong");
+
+	/* Find the node 1, previous node should be null */
+	sys_snode_t *test_node_1_prev = &test_node_1.node;
+
+	zassert_true(sys_slist_find(&test_list, &test_node_1.node, &test_node_1_prev),
+		     "test_list did not find node ");
+	zassert_is_null(test_node_1_prev, "test_list previous node not null ");
 
 	/* Finding and removing node 1 */
 	sys_slist_find_and_remove(&test_list, &test_node_1.node);
@@ -249,6 +264,14 @@ void test_slist(void)
 	zassert_true((sys_slist_peek_next_no_check(&test_node_2.node) ==
 		      &test_node_4.node),
 		     "test_list node links are wrong");
+
+    /* Find the node 4 and get the previous node*/
+	sys_snode_t *test_node_4_prev = NULL;
+
+	zassert_true(sys_slist_find(&test_list, &test_node_4.node, &test_node_4_prev),
+		     "test_list did not find node");
+	zassert_equal(&test_node_2.node, test_node_4_prev,
+		     "test_list previous node wrong ");
 
 	/* Finding and removing node 1 */
 	sys_slist_find_and_remove(&test_list, &test_node_1.node);
@@ -368,6 +391,18 @@ void test_slist(void)
 			      ((struct data_node *)node)->data);
 	}
 
+	/* test sys_slist_append_list with emtpy list */
+	sys_slist_init(&test_list);
+	sys_slist_init(&append_list);
+	for (ii = 0; ii < 6; ii++) {
+		/* regenerate test_list only */
+		sys_slist_append(&test_list, &data_node[ii].node);
+	}
+	sys_slist_append_list(&test_list, append_list.head, append_list.tail);
+	node = sys_slist_peek_tail(&test_list);
+	zassert_equal(((struct data_node *)node)->data, data_node[5].data, "expected %d got %d",
+		      data_node[5].data, ((struct data_node *)node)->data);
+
 	/* test sys_slist_merge_slist */
 	sys_slist_init(&test_list);
 	sys_slist_init(&append_list);
@@ -385,6 +420,19 @@ void test_slist(void)
 	}
 	zassert_true(sys_slist_is_empty(&append_list),
 		     "merged list is not empty");
+
+	/* test sys_slist_merge_slist with emtpy list */
+	sys_slist_init(&test_list);
+	sys_slist_init(&append_list);
+	for (ii = 0; ii < 6; ii++) {
+		/* regenerate test_list only */
+		sys_slist_append(&test_list, &data_node[ii].node);
+	}
+
+	sys_slist_merge_slist(&test_list, &append_list);
+	node = sys_slist_peek_tail(&test_list);
+	zassert_equal(((struct data_node *)node)->data, data_node[5].data, "expected %d got %d",
+		      data_node[5].data, ((struct data_node *)node)->data);
 }
 
 /**

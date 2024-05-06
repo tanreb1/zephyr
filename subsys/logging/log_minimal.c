@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 #include <ctype.h>
-#include <logging/log.h>
-#include <sys/printk.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/llext/symbol.h>
 
 #define HEXDUMP_BYTES_IN_LINE 8U
 
@@ -19,6 +20,7 @@ void z_log_minimal_printk(const char *fmt, ...)
 	vprintk(fmt, ap);
 	va_end(ap);
 }
+EXPORT_SYMBOL(z_log_minimal_printk);
 
 void z_log_minimal_vprintk(const char *fmt, va_list ap)
 {

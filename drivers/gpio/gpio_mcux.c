@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016 Freescale Semiconductor, Inc.
- * Copyright (c) 2017, NXP
+ * Copyright 2017, 2023-2024 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,13 +8,14 @@
 #define DT_DRV_COMPAT nxp_kinetis_gpio
 
 #include <errno.h>
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/dt-bindings/gpio/nxp-kinetis-gpio.h>
+#include <zephyr/irq.h>
 #include <soc.h>
 #include <fsl_common.h>
-#include <fsl_port.h>
 
-#include "gpio_utils.h"
+#include <zephyr/drivers/gpio/gpio_utils.h>
 
 struct gpio_mcux_config {
 	/* gpio_driver_config needs to be first */
@@ -78,7 +79,12 @@ static int gpio_mcux_configure(const struct device *dev,
 
 	/* Set PCR mux to GPIO for the pin we are configuring */
 	mask |= PORT_PCR_MUX_MASK;
-	pcr |= PORT_PCR_MUX(kPORT_MuxAsGpio);
+	pcr |= PORT_PCR_MUX(PORT_MUX_GPIO);
+
+#if defined(FSL_FEATURE_PORT_HAS_INPUT_BUFFER) && FSL_FEATURE_PORT_HAS_INPUT_BUFFER
+	/* Enable digital input buffer */
+	pcr |= PORT_PCR_IBE_MASK;
+#endif
 
 	/* Now do the PORT module. Figure out the pullup/pulldown
 	 * configuration, but don't write it to the PCR register yet.
@@ -90,7 +96,7 @@ static int gpio_mcux_configure(const struct device *dev,
 		pcr |= PORT_PCR_PE_MASK | PORT_PCR_PS_MASK;
 
 	} else if ((flags & GPIO_PULL_DOWN) != 0) {
-		/* Enable the pull and select the pulldown resistor (deselect
+		/* Enable the pull and select the pulldown resistor, deselect
 		 * the pullup resistor.
 		 */
 		pcr |= PORT_PCR_PE_MASK;
@@ -98,12 +104,12 @@ static int gpio_mcux_configure(const struct device *dev,
 
 #if defined(FSL_FEATURE_PORT_HAS_DRIVE_STRENGTH) && FSL_FEATURE_PORT_HAS_DRIVE_STRENGTH
 	/* Determine the drive strength */
-	switch (flags & GPIO_DS_MASK) {
-	case GPIO_DS_DFLT:
+	switch (flags & KINETIS_GPIO_DS_MASK) {
+	case KINETIS_GPIO_DS_DFLT:
 		/* Default is low drive strength */
 		mask |= PORT_PCR_DSE_MASK;
 		break;
-	case GPIO_DS_ALT:
+	case KINETIS_GPIO_DS_ALT:
 		/* Alternate is high drive strength */
 		pcr |= PORT_PCR_DSE_MASK;
 		break;
@@ -172,6 +178,7 @@ static int gpio_mcux_port_toggle_bits(const struct device *dev, uint32_t mask)
 	return 0;
 }
 
+#if !(defined(FSL_FEATURE_PORT_HAS_NO_INTERRUPT) && FSL_FEATURE_PORT_HAS_NO_INTERRUPT)
 static uint32_t get_port_pcr_irqc_value_from_flags(const struct device *dev,
 						   uint32_t pin,
 						   enum gpio_int_mode mode,
@@ -199,12 +206,62 @@ static uint32_t get_port_pcr_irqc_value_from_flags(const struct device *dev,
 			case GPIO_INT_TRIG_BOTH:
 				port_interrupt = kPORT_InterruptEitherEdge;
 				break;
+			default:
+				return -EINVAL;
 			}
 		}
 	}
 
 	return PORT_PCR_IRQC(port_interrupt);
 }
+#endif  /* !defined(FSL_FEATURE_PORT_HAS_NO_INTERRUPT) && FSL_FEATURE_PORT_HAS_NO_INTERRUPT */
+
+#if (defined(FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT) && \
+		FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT)
+
+#define GPIO_MCUX_INTERRUPT_DISABLED		0
+#define GPIO_MCUX_INTERRUPT_LOGIC_0		0x8
+#define GPIO_MCUX_INTERRUPT_RISING_EDGE		0x9
+#define GPIO_MCUX_INTERRUPT_FALLING_EDGE	0xA
+#define GPIO_MCUX_INTERRUPT_BOTH_EDGE		0xB
+#define GPIO_MCUX_INTERRUPT_LOGIC_1		0xC
+
+static uint32_t get_gpio_icr_irqc_value_from_flags(const struct device *dev,
+						   uint32_t pin,
+						   enum gpio_int_mode mode,
+						   enum gpio_int_trig trig)
+{
+	uint8_t gpio_interrupt = 0;
+
+	if (mode == GPIO_INT_MODE_DISABLED) {
+		gpio_interrupt = GPIO_MCUX_INTERRUPT_DISABLED;
+	} else {
+		if (mode == GPIO_INT_MODE_LEVEL) {
+			if (trig == GPIO_INT_TRIG_LOW) {
+				gpio_interrupt = GPIO_MCUX_INTERRUPT_LOGIC_0;
+			} else {
+				gpio_interrupt = GPIO_MCUX_INTERRUPT_LOGIC_1;
+			}
+		} else {
+			switch (trig) {
+			case GPIO_INT_TRIG_LOW:
+				gpio_interrupt = GPIO_MCUX_INTERRUPT_FALLING_EDGE;
+				break;
+			case GPIO_INT_TRIG_HIGH:
+				gpio_interrupt = GPIO_MCUX_INTERRUPT_RISING_EDGE;
+				break;
+			case GPIO_INT_TRIG_BOTH:
+				gpio_interrupt = GPIO_MCUX_INTERRUPT_BOTH_EDGE;
+				break;
+			default:
+				return -EINVAL;
+			}
+		}
+	}
+
+	return GPIO_ICR_IRQC(gpio_interrupt);
+}
+#endif  /* (defined(FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT) */
 
 static int gpio_mcux_pin_interrupt_configure(const struct device *dev,
 					     gpio_pin_t pin, enum gpio_int_mode mode,
@@ -231,9 +288,16 @@ static int gpio_mcux_pin_interrupt_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
+#if !(defined(FSL_FEATURE_PORT_HAS_NO_INTERRUPT) && FSL_FEATURE_PORT_HAS_NO_INTERRUPT)
 	uint32_t pcr = get_port_pcr_irqc_value_from_flags(dev, pin, mode, trig);
 
 	port_base->PCR[pin] = (port_base->PCR[pin] & ~PORT_PCR_IRQC_MASK) | pcr;
+#elif (defined(FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT) && \
+		FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT)
+	uint32_t icr = get_gpio_icr_irqc_value_from_flags(dev, pin, mode, trig);
+
+	gpio_base->ICR[pin] = (gpio_base->ICR[pin] & ~GPIO_ICR_IRQC_MASK) | icr;
+#endif  /* !(defined(FSL_FEATURE_PORT_HAS_NO_INTERRUPT) */
 
 	return 0;
 }
@@ -252,14 +316,42 @@ static void gpio_mcux_port_isr(const struct device *dev)
 	struct gpio_mcux_data *data = dev->data;
 	uint32_t int_status;
 
+#if !(defined(FSL_FEATURE_PORT_HAS_NO_INTERRUPT) && FSL_FEATURE_PORT_HAS_NO_INTERRUPT)
 	int_status = config->port_base->ISFR;
 
 	/* Clear the port interrupts */
 	config->port_base->ISFR = int_status;
+#elif (defined(FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT) && \
+		FSL_FEATURE_GPIO_HAS_INTERRUPT_CHANNEL_SELECT)
+	int_status = config->gpio_base->ISFR[0];
+
+	/* Clear the gpio interrupts */
+	config->gpio_base->ISFR[0] = int_status;
+#endif  /* !(defined(FSL_FEATURE_PORT_HAS_NO_INTERRUPT) */
 
 	gpio_fire_callbacks(&data->callbacks, dev, int_status);
 }
 
+#ifdef CONFIG_GPIO_GET_DIRECTION
+static int gpio_mcux_port_get_direction(const struct device *dev, gpio_port_pins_t map,
+					gpio_port_pins_t *inputs, gpio_port_pins_t *outputs)
+{
+	const struct gpio_mcux_config *config = dev->config;
+	GPIO_Type *gpio_base = config->gpio_base;
+
+	map &= config->common.port_pin_mask;
+
+	if (inputs != NULL) {
+		*inputs = map & (~gpio_base->PDDR);
+	}
+
+	if (outputs != NULL) {
+		*outputs = map & gpio_base->PDDR;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_GPIO_GET_DIRECTION */
 
 static const struct gpio_driver_api gpio_mcux_driver_api = {
 	.pin_configure = gpio_mcux_configure,
@@ -270,6 +362,9 @@ static const struct gpio_driver_api gpio_mcux_driver_api = {
 	.port_toggle_bits = gpio_mcux_port_toggle_bits,
 	.pin_interrupt_configure = gpio_mcux_pin_interrupt_configure,
 	.manage_callback = gpio_mcux_manage_callback,
+#ifdef CONFIG_GPIO_GET_DIRECTION
+	.port_get_direction = gpio_mcux_port_get_direction,
+#endif /* CONFIG_GPIO_GET_DIRECTION */
 };
 
 #define GPIO_MCUX_IRQ_INIT(n)						\
@@ -280,7 +375,7 @@ static const struct gpio_driver_api gpio_mcux_driver_api = {
 			    DEVICE_DT_INST_GET(n), 0);			\
 									\
 		irq_enable(DT_INST_IRQN(n));				\
-	} while (0)
+	} while (false)
 
 #define GPIO_PORT_BASE_ADDR(n) DT_REG_ADDR(DT_INST_PHANDLE(n, nxp_kinetis_port))
 

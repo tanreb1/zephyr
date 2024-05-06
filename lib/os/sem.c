@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/sem.h>
-#include <syscall_handler.h>
+#include <zephyr/sys/sem.h>
+#include <zephyr/internal/syscall_handler.h>
 
 #ifdef CONFIG_USERSPACE
 #define SYS_SEM_MINIMUM      0
@@ -53,7 +53,7 @@ int sys_sem_init(struct sys_sem *sem, unsigned int initial_count,
 		return -EINVAL;
 	}
 
-	atomic_set(&sem->futex.val, initial_count);
+	(void)atomic_set(&sem->futex.val, initial_count);
 	sem->limit = limit;
 
 	return 0;

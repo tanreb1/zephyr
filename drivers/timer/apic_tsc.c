@@ -2,16 +2,24 @@
  * Copyright (c) 2021 Intel Corporation
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <drivers/timer/system_timer.h>
-#include <sys_clock.h>
-#include <spinlock.h>
-#include <drivers/interrupt_controller/loapic.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/drivers/interrupt_controller/loapic.h>
+#include <zephyr/irq.h>
+#include <cpuid.h>
 
 #define IA32_TSC_DEADLINE_MSR 0x6e0
 #define IA32_TSC_ADJUST_MSR   0x03b
 
+#ifdef CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME
+static uint64_t CYC_PER_TICK;
+extern int z_clock_hw_cycles_per_sec;
+#else
 #define CYC_PER_TICK (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC \
 		      / (uint64_t) CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#endif
 
 struct apic_timer_lvt {
 	uint8_t vector   : 8;
@@ -154,11 +162,13 @@ static inline void cpuid(uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *
 			 : "a"(*eax), "c"(*ecx));
 }
 
-int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
-#ifdef CONFIG_ASSERT
+#if defined(CONFIG_ASSERT) || defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
 	uint32_t eax, ebx, ecx, edx;
+#endif
 
+#ifdef CONFIG_ASSERT
 	eax = 1; ecx = 0;
 	cpuid(&eax, &ebx, &ecx, &edx);
 	__ASSERT((ecx & BIT(24)) != 0, "No TSC Deadline support");
@@ -170,6 +180,23 @@ int sys_clock_driver_init(const struct device *dev)
 	eax = 7; ecx = 0;
 	cpuid(&eax, &ebx, &ecx, &edx);
 	__ASSERT((ebx & BIT(1)) != 0, "No TSC_ADJUST MSR support");
+#endif
+
+#ifdef CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME
+	int tsc_freq;
+
+	eax = 0;
+	ebx = 0;
+	ecx = 0;
+	if (!__get_cpuid(0x15, &eax, &ebx, &ecx, &edx)) {
+		__ASSERT(false, "error cpuid leaf 0x15\n");
+	}
+
+	__ASSERT((ebx != 0) && (ecx != 0), "No TSC/core crystal clock ratio is enumerated");
+
+	tsc_freq = (uint32_t)((ecx * (uint64_t)ebx) / eax);
+	z_clock_hw_cycles_per_sec = tsc_freq;
+	CYC_PER_TICK = tsc_freq/CONFIG_SYS_CLOCK_TICKS_PER_SEC;
 #endif
 
 	clear_tsc_adjust();
@@ -200,3 +227,6 @@ int sys_clock_driver_init(const struct device *dev)
 
 	return 0;
 }
+
+SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2,
+	 CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);
