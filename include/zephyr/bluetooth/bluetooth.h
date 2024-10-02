@@ -22,10 +22,11 @@
 #include <string.h>
 
 #include <zephyr/sys/util.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/crypto.h>
+#include <zephyr/bluetooth/classic/classic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -220,7 +221,7 @@ typedef void (*bt_ready_cb_t)(int err);
  * earlier.
  *
  * @param cb Callback to notify completion or NULL to perform the
- * enabling synchronously.
+ * enabling synchronously. The callback is called from the system workqueue.
  *
  * @return Zero on success or (negative) error code otherwise.
  */
@@ -230,6 +231,16 @@ int bt_enable(bt_ready_cb_t cb);
  * @brief Disable Bluetooth
  *
  * Disable Bluetooth. Can't be called before bt_enable has completed.
+ *
+ * This API will clear all configured identities and keys that are not persistently
+ * stored with @kconfig{CONFIG_BT_SETTINGS}. These can be restored
+ * with settings_load() before reenabling the stack.
+ *
+ * This API does _not_ clear previously registered callbacks
+ * like @ref bt_le_scan_cb_register, @ref bt_conn_cb_register
+ * AND @ref bt_br_discovery_cb_register.
+ * That is, the application shall not re-register them when
+ * the Bluetooth subsystem is re-enabled later.
  *
  * Close and release HCI resources. Result is architecture dependent.
  *
@@ -899,7 +910,7 @@ struct bt_le_per_adv_param {
  *                   address of peer for directed advertising.
  */
 #define BT_LE_ADV_PARAM(_options, _int_min, _int_max, _peer) \
-	((struct bt_le_adv_param[]) { \
+	((const struct bt_le_adv_param[]) { \
 		BT_LE_ADV_PARAM_INIT(_options, _int_min, _int_max, _peer) \
 	 })
 
@@ -911,6 +922,12 @@ struct bt_le_per_adv_param {
 #define BT_LE_ADV_CONN BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE, \
 				       BT_GAP_ADV_FAST_INT_MIN_2, \
 				       BT_GAP_ADV_FAST_INT_MAX_2, NULL)
+
+/** This is the recommended default for connectable advertisers.
+ */
+#define BT_LE_ADV_CONN_ONE_TIME                                                                    \
+	BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_ONE_TIME,                        \
+			BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL)
 
 /**
  * @deprecated This macro will be removed in the near future, see
@@ -1076,7 +1093,7 @@ struct bt_le_per_adv_param {
  * @param _n_evts  Number of advertising events
  */
 #define BT_LE_EXT_ADV_START_PARAM(_timeout, _n_evts) \
-	((struct bt_le_ext_adv_start_param[]) { \
+	((const struct bt_le_ext_adv_start_param[]) { \
 		BT_LE_EXT_ADV_START_PARAM_INIT((_timeout), (_n_evts)) \
 	})
 
@@ -1226,7 +1243,7 @@ struct bt_le_ext_adv_start_param {
  * @param param  Advertise start parameters.
  */
 int bt_le_ext_adv_start(struct bt_le_ext_adv *adv,
-			struct bt_le_ext_adv_start_param *param);
+			const struct bt_le_ext_adv_start_param *param);
 
 /**
  * @brief Stop advertising with the given advertising set
@@ -1807,8 +1824,11 @@ int bt_le_per_adv_sync_delete(struct bt_le_per_adv_sync *per_adv_sync);
  * such as synced, terminated and when data is received.
  *
  * @param cb Callback struct. Must point to memory that remains valid.
+ *
+ * @retval 0 Success.
+ * @retval -EEXIST if @p cb was already registered.
  */
-void bt_le_per_adv_sync_cb_register(struct bt_le_per_adv_sync_cb *cb);
+int bt_le_per_adv_sync_cb_register(struct bt_le_per_adv_sync_cb *cb);
 
 /**
  * @brief Enables receiving periodic advertising reports for a sync.
@@ -2047,12 +2067,26 @@ struct bt_le_scan_param {
 	uint8_t  type;
 
 	/** Bit-field of scanning options. */
-	uint32_t options;
+	uint8_t options;
 
-	/** Scan interval (N * 0.625 ms) */
+	/** Scan interval (N * 0.625 ms).
+	 *
+	 * @note When @kconfig{CONFIG_BT_SCAN_AND_INITIATE_IN_PARALLEL} is enabled
+	 *       and the application wants to scan and connect in parallel,
+	 *       the Bluetooth Controller may require the scan interval used
+	 *       for scanning and connection establishment to be equal to
+	 *       obtain the best performance.
+	 */
 	uint16_t interval;
 
-	/** Scan window (N * 0.625 ms) */
+	/** Scan window (N * 0.625 ms)
+	 *
+	 * @note When @kconfig{CONFIG_BT_SCAN_AND_INITIATE_IN_PARALLEL} is enabled
+	 *       and the application wants to scan and connect in parallel,
+	 *       the Bluetooth Controller may require the scan window used
+	 *       for scanning and connection establishment to be equal to
+	 *       obtain the best performance.
+	 */
 	uint16_t window;
 
 	/**
@@ -2265,12 +2299,18 @@ BUILD_ASSERT(BT_GAP_SCAN_FAST_WINDOW == BT_GAP_SCAN_FAST_INTERVAL_MIN,
  *       In order to enable directed advertiser reports then
  *       @kconfig{CONFIG_BT_SCAN_WITH_IDENTITY} must be enabled.
  *
+ * @note Setting the `param.timeout` parameter is not supported when
+ *       @kconfig{CONFIG_BT_PRIVACY} is enabled, when the param.type is @ref
+ *       BT_LE_SCAN_TYPE_ACTIVE. Supplying a non-zero timeout will result in an
+ *       -EINVAL error code.
+ *
  * @param param Scan parameters.
  * @param cb Callback to notify scan results. May be NULL if callback
  *           registration through @ref bt_le_scan_cb_register is preferred.
  *
  * @return Zero on success or error code otherwise, positive in case of
  *         protocol error or negative (POSIX) in case of stack internal error.
+ * @retval -EBUSY if the scanner is already being started in a different thread.
  */
 int bt_le_scan_start(const struct bt_le_scan_param *param, bt_le_scan_cb_t cb);
 
@@ -2294,8 +2334,11 @@ int bt_le_scan_stop(void);
  * API was used to start the scanner.
  *
  * @param cb Callback struct. Must point to memory that remains valid.
+ *
+ * @retval 0 Success.
+ * @retval -EEXIST if @p cb was already registered.
  */
-void bt_le_scan_cb_register(struct bt_le_scan_cb *cb);
+int bt_le_scan_cb_register(struct bt_le_scan_cb *cb);
 
 /**
  * @brief Unregister scanner packet callbacks.
@@ -2321,11 +2364,6 @@ void bt_le_scan_cb_unregister(struct bt_le_scan_cb *cb);
  *         protocol error or negative (POSIX) in case of stack internal error.
  */
 int bt_le_filter_accept_list_add(const bt_addr_le_t *addr);
-__deprecated
-static inline int bt_le_whitelist_add(const bt_addr_le_t *addr)
-{
-	return bt_le_filter_accept_list_add(addr);
-}
 
 /**
  * @brief Remove device (LE) from filter accept list.
@@ -2342,11 +2380,6 @@ static inline int bt_le_whitelist_add(const bt_addr_le_t *addr)
  *         protocol error or negative (POSIX) in case of stack internal error.
  */
 int bt_le_filter_accept_list_remove(const bt_addr_le_t *addr);
-__deprecated
-static inline int bt_le_whitelist_rem(const bt_addr_le_t *addr)
-{
-	return bt_le_filter_accept_list_remove(addr);
-}
 
 /**
  * @brief Clear filter accept list.
@@ -2361,11 +2394,6 @@ static inline int bt_le_whitelist_rem(const bt_addr_le_t *addr)
  *         protocol error or negative (POSIX) in case of stack internal error.
  */
 int bt_le_filter_accept_list_clear(void);
-__deprecated
-static inline int bt_le_whitelist_clear(void)
-{
-	return bt_le_filter_accept_list_clear();
-}
 
 /**
  * @brief Set (LE) channel map.
@@ -2494,126 +2522,6 @@ int bt_le_oob_get_local(uint8_t id, struct bt_le_oob *oob);
  */
 int bt_le_ext_adv_oob_get_local(struct bt_le_ext_adv *adv,
 				struct bt_le_oob *oob);
-
-/** @brief BR/EDR discovery result structure */
-struct bt_br_discovery_result {
-	/** private */
-	uint8_t _priv[4];
-
-	/** Remote device address */
-	bt_addr_t addr;
-
-	/** RSSI from inquiry */
-	int8_t rssi;
-
-	/** Class of Device */
-	uint8_t cod[3];
-
-	/** Extended Inquiry Response */
-	uint8_t eir[240];
-};
-
-/**
- * @typedef bt_br_discovery_cb_t
- * @brief Callback type for reporting BR/EDR discovery (inquiry)
- *        results.
- *
- * A callback of this type is given to the bt_br_discovery_start()
- * function and will be called at the end of the discovery with
- * information about found devices populated in the results array.
- *
- * @param results Storage used for discovery results
- * @param count Number of valid discovery results.
- */
-typedef void bt_br_discovery_cb_t(struct bt_br_discovery_result *results,
-				  size_t count);
-
-/** BR/EDR discovery parameters */
-struct bt_br_discovery_param {
-	/** Maximum length of the discovery in units of 1.28 seconds.
-	 *  Valid range is 0x01 - 0x30.
-	 */
-	uint8_t length;
-
-	/** True if limited discovery procedure is to be used. */
-	bool limited;
-};
-
-/**
- * @brief Start BR/EDR discovery
- *
- * Start BR/EDR discovery (inquiry) and provide results through the specified
- * callback. When bt_br_discovery_cb_t is called it indicates that discovery
- * has completed. If more inquiry results were received during session than
- * fits in provided result storage, only ones with highest RSSI will be
- * reported.
- *
- * @param param Discovery parameters.
- * @param results Storage for discovery results.
- * @param count Number of results in storage. Valid range: 1-255.
- * @param cb Callback to notify discovery results.
- *
- * @return Zero on success or error code otherwise, positive in case
- * of protocol error or negative (POSIX) in case of stack internal error
- */
-int bt_br_discovery_start(const struct bt_br_discovery_param *param,
-			  struct bt_br_discovery_result *results, size_t count,
-			  bt_br_discovery_cb_t cb);
-
-/**
- * @brief Stop BR/EDR discovery.
- *
- * Stops ongoing BR/EDR discovery. If discovery was stopped by this call
- * results won't be reported
- *
- * @return Zero on success or error code otherwise, positive in case of
- *         protocol error or negative (POSIX) in case of stack internal error.
- */
-int bt_br_discovery_stop(void);
-
-struct bt_br_oob {
-	/** BR/EDR address. */
-	bt_addr_t addr;
-};
-
-/**
- * @brief Get BR/EDR local Out Of Band information
- *
- * This function allows to get local controller information that are useful
- * for Out Of Band pairing or connection creation process.
- *
- * @param oob Out Of Band information
- */
-int bt_br_oob_get_local(struct bt_br_oob *oob);
-
-
-/**
- * @brief Enable/disable set controller in discoverable state.
- *
- * Allows make local controller to listen on INQUIRY SCAN channel and responds
- * to devices making general inquiry. To enable this state it's mandatory
- * to first be in connectable state.
- *
- * @param enable Value allowing/disallowing controller to become discoverable.
- *
- * @return Negative if fail set to requested state or requested state has been
- *         already set. Zero if done successfully.
- */
-int bt_br_set_discoverable(bool enable);
-
-/**
- * @brief Enable/disable set controller in connectable state.
- *
- * Allows make local controller to be connectable. It means the controller
- * start listen to devices requests on PAGE SCAN channel. If disabled also
- * resets discoverability if was set.
- *
- * @param enable Value allowing/disallowing controller to be connectable.
- *
- * @return Negative if fail set to requested state or requested state has been
- *         already set. Zero if done successfully.
- */
-int bt_br_set_connectable(bool enable);
 
 /**
  * @brief Clear pairing information.

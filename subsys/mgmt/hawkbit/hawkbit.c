@@ -31,11 +31,6 @@
 #include "hawkbit_firmware.h"
 #include "hawkbit_priv.h"
 
-#if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
-#define CA_CERTIFICATE_TAG 1
-#include <zephyr/net/tls_credentials.h>
-#endif
-
 LOG_MODULE_REGISTER(hawkbit, CONFIG_HAWKBIT_LOG_LEVEL);
 
 #define CANCEL_BASE_SIZE 50
@@ -82,6 +77,9 @@ static struct hawkbit_config {
 #ifndef CONFIG_HAWKBIT_DDI_NO_SECURITY
 	char ddi_security_token[DDI_SECURITY_TOKEN_SIZE + 1];
 #endif
+#ifdef CONFIG_HAWKBIT_USE_DYNAMIC_CERT_TAG
+	sec_tag_t tls_tag;
+#endif
 #endif /* CONFIG_HAWKBIT_SET_SETTINGS_RUNTIME */
 } hb_cfg;
 
@@ -103,6 +101,14 @@ static struct hawkbit_config {
 #define HAWKBIT_DDI_SECURITY_TOKEN CONFIG_HAWKBIT_DDI_SECURITY_TOKEN
 #endif /* CONFIG_HAWKBIT_DDI_NO_SECURITY */
 
+#ifdef CONFIG_HAWKBIT_USE_DYNAMIC_CERT_TAG
+#define HAWKBIT_CERT_TAG hb_cfg.tls_tag
+#elif defined(HAWKBIT_USE_STATIC_CERT_TAG)
+#define HAWKBIT_CERT_TAG CONFIG_HAWKBIT_STATIC_CERT_TAG
+#else
+#define HAWKBIT_CERT_TAG 0
+#endif /* CONFIG_HAWKBIT_USE_DYNAMIC_CERT_TAG */
+
 struct hawkbit_download {
 	int download_status;
 	int download_progress;
@@ -115,6 +121,7 @@ static struct hawkbit_context {
 	int sock;
 	int32_t action_id;
 	uint8_t *response_data;
+	size_t response_data_size;
 	int32_t json_action_id;
 	struct hawkbit_download dl;
 	struct http_request http_req;
@@ -341,7 +348,7 @@ static bool start_http_client(void)
 	struct zsock_addrinfo *addr;
 	struct zsock_addrinfo hints = {0};
 	int resolve_attempts = 10;
-	int protocol = IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS) ? IPPROTO_TLS_1_2 : IPPROTO_TCP;
+	int protocol = IS_ENABLED(CONFIG_HAWKBIT_USE_TLS) ? IPPROTO_TLS_1_2 : IPPROTO_TCP;
 
 	if (IS_ENABLED(CONFIG_NET_IPV6)) {
 		hints.ai_family = AF_INET6;
@@ -371,9 +378,9 @@ static bool start_http_client(void)
 		goto err;
 	}
 
-#if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
+#ifdef CONFIG_HAWKBIT_USE_TLS
 	sec_tag_t sec_tag_opt[] = {
-		CA_CERTIFICATE_TAG,
+		HAWKBIT_CERT_TAG,
 	};
 
 	if (zsock_setsockopt(hb_context.sock, SOL_TLS, TLS_SEC_TAG_LIST, sec_tag_opt,
@@ -385,7 +392,7 @@ static bool start_http_client(void)
 			     sizeof(HAWKBIT_SERVER)) < 0) {
 		goto err_sock;
 	}
-#endif
+#endif /* CONFIG_HAWKBIT_USE_TLS */
 
 	if (zsock_connect(hb_context.sock, addr->ai_addr, addr->ai_addrlen) < 0) {
 		LOG_ERR("Failed to connect to server");
@@ -759,6 +766,12 @@ int hawkbit_set_config(struct hawkbit_runtime_config *config)
 				hb_cfg.ddi_security_token);
 		}
 #endif /* CONFIG_HAWKBIT_DDI_NO_SECURITY */
+#ifdef CONFIG_HAWKBIT_USE_DYNAMIC_CERT_TAG
+		if (config->tls_tag != 0) {
+			hb_cfg.tls_tag = config->tls_tag;
+			LOG_DBG("configured %s: %d", "hawkbit/tls_tag", hb_cfg.tls_tag);
+		}
+#endif /* CONFIG_HAWKBIT_USE_DYNAMIC_CERT_TAG */
 		settings_save();
 		k_sem_give(&probe_sem);
 	} else {
@@ -776,6 +789,7 @@ struct hawkbit_runtime_config hawkbit_get_config(void)
 		.server_addr = HAWKBIT_SERVER,
 		.server_port = HAWKBIT_PORT_INT,
 		.auth_token = HAWKBIT_DDI_SECURITY_TOKEN,
+		.tls_tag = HAWKBIT_CERT_TAG,
 	};
 
 	return config;
@@ -846,7 +860,6 @@ static void response_cb(struct http_response *rsp, enum http_final_call final_da
 	static size_t body_len;
 	int ret, type, downloaded;
 	uint8_t *body_data = NULL, *rsp_tmp = NULL;
-	static size_t response_buffer_size = RESPONSE_BUFFER_SIZE;
 
 	type = enum_for_http_req_string(userdata);
 
@@ -870,9 +883,12 @@ static void response_cb(struct http_response *rsp, enum http_final_call final_da
 			body_data = rsp->body_frag_start;
 			body_len = rsp->body_frag_len;
 
-			if ((hb_context.dl.downloaded_size + body_len) > response_buffer_size) {
-				response_buffer_size <<= 1;
-				rsp_tmp = realloc(hb_context.response_data, response_buffer_size);
+			if ((hb_context.dl.downloaded_size + body_len) >
+			    hb_context.response_data_size) {
+				hb_context.response_data_size =
+					hb_context.dl.downloaded_size + body_len;
+				rsp_tmp = k_realloc(hb_context.response_data,
+						    hb_context.response_data_size);
 				if (rsp_tmp == NULL) {
 					LOG_ERR("Failed to realloc memory");
 					hb_context.code_status = HAWKBIT_METADATA_ERROR;
@@ -921,9 +937,12 @@ static void response_cb(struct http_response *rsp, enum http_final_call final_da
 			body_data = rsp->body_frag_start;
 			body_len = rsp->body_frag_len;
 
-			if ((hb_context.dl.downloaded_size + body_len) > response_buffer_size) {
-				response_buffer_size <<= 1;
-				rsp_tmp = realloc(hb_context.response_data, response_buffer_size);
+			if ((hb_context.dl.downloaded_size + body_len) >
+			    hb_context.response_data_size) {
+				hb_context.response_data_size =
+					hb_context.dl.downloaded_size + body_len;
+				rsp_tmp = k_realloc(hb_context.response_data,
+						    hb_context.response_data_size);
 				if (rsp_tmp == NULL) {
 					LOG_ERR("Failed to realloc memory");
 					hb_context.code_status = HAWKBIT_METADATA_ERROR;
@@ -1177,7 +1196,7 @@ static bool send_request(enum http_method method, enum hawkbit_http_request type
 void hawkbit_reboot(void)
 {
 	LOG_PANIC();
-	sys_reboot(SYS_REBOOT_WARM);
+	sys_reboot(IS_ENABLED(CONFIG_HAWKBIT_REBOOT_COLD) ? SYS_REBOOT_COLD : SYS_REBOOT_WARM);
 }
 
 static bool check_hawkbit_server(void)
@@ -1238,7 +1257,14 @@ enum hawkbit_response hawkbit_probe(void)
 	}
 
 	memset(&hb_context, 0, sizeof(hb_context));
-	hb_context.response_data = malloc(RESPONSE_BUFFER_SIZE);
+
+	hb_context.response_data_size = RESPONSE_BUFFER_SIZE;
+	hb_context.response_data = k_calloc(hb_context.response_data_size, sizeof(uint8_t));
+	if (hb_context.response_data == NULL) {
+		LOG_ERR("Failed to allocate memory");
+		hb_context.code_status = HAWKBIT_METADATA_ERROR;
+		goto error;
+	}
 
 	if (!boot_is_img_confirmed()) {
 		LOG_ERR("Current image is not confirmed");
@@ -1346,7 +1372,7 @@ enum hawkbit_response hawkbit_probe(void)
 	snprintk(hb_context.url_buffer, sizeof(hb_context.url_buffer), "%s/%s-%s/%s",
 		 HAWKBIT_JSON_URL, CONFIG_BOARD, device_id, deployment_base);
 	memset(&hawkbit_results.dep, 0, sizeof(hawkbit_results.dep));
-	memset(hb_context.response_data, 0, RESPONSE_BUFFER_SIZE);
+	memset(hb_context.response_data, 0, hb_context.response_data_size);
 
 	if (!send_request(HTTP_GET, HAWKBIT_PROBE_DEPLOYMENT_BASE, HAWKBIT_STATUS_FINISHED_NONE,
 			  HAWKBIT_STATUS_EXEC_NONE)) {
@@ -1440,7 +1466,7 @@ cleanup:
 	cleanup_connection();
 
 error:
-	free(hb_context.response_data);
+	k_free(hb_context.response_data);
 	k_sem_give(&probe_sem);
 	return hb_context.code_status;
 }

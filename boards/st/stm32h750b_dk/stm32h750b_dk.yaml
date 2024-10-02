@@ -12,4 +12,7 @@ supported:
   - arduino_gpio
   - gpio
   - dma
+  - flash
+  - rtc
+  - memc
 vendor: st

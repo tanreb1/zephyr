@@ -21,4 +21,6 @@ supported:
   - netif:eth
   - backup_sram
   - usb_device
+  - rtc
+  - can
 vendor: st

@@ -40,6 +40,8 @@ enum usbd_msg_type {
 	USBD_MSG_SUSPEND,
 	/** Bus reset detected */
 	USBD_MSG_RESET,
+	/** Device changed configuration */
+	USBD_MSG_CONFIGURATION,
 	/** Non-correctable UDC error message  */
 	USBD_MSG_UDC_ERROR,
 	/** Unrecoverable device stack error message  */
@@ -52,13 +54,16 @@ enum usbd_msg_type {
 	USBD_MSG_MAX_NUMBER,
 };
 
-
+/**
+ * @cond INTERNAL_HIDDEN
+ */
 static const char *const usbd_msg_type_list[] = {
 	"VBUS ready",
 	"VBUS removed",
 	"Device resumed",
 	"Device suspended",
 	"Bus reset",
+	"New device configuration",
 	"Controller error",
 	"Stack error",
 	"CDC ACM line coding",
@@ -67,6 +72,7 @@ static const char *const usbd_msg_type_list[] = {
 
 BUILD_ASSERT(ARRAY_SIZE(usbd_msg_type_list) == USBD_MSG_MAX_NUMBER,
 	     "Number of entries in usbd_msg_type_list is not equal to USBD_MSG_MAX_NUMBER");
+/** @endcond */
 
 /**
  * @brief USB device message
@@ -80,18 +86,6 @@ struct usbd_msg {
 		const struct device *dev;
 	};
 };
-
-/**
- * @brief Callback type definition for USB device message delivery
- *
- * The implementation uses the system workqueue, and a callback provided and
- * registered by the application. The application callback is called in the
- * context of the system workqueue. Notification messages are stored in a queue
- * and delivered to the callback in sequence.
- *
- * @param[in] msg Pointer to USB device message
- */
-typedef void (*usbd_msg_cb_t)(const struct usbd_msg *const msg);
 
 /**
  * @brief Returns the message type as a constant string

@@ -589,7 +589,7 @@ static void iso_timer_timeout(struct k_work *work)
 	k_work_reschedule(&iso_send_work, K_USEC(big_create_param.interval - 100));
 
 	for (int i = 0; i < big_create_param.num_bis; i++) {
-		buf = net_buf_alloc(&bis_tx_pool, K_FOREVER);
+		buf = net_buf_alloc(&bis_tx_pool, K_NO_WAIT);
 		if (buf == NULL) {
 			LOG_ERR("Could not allocate buffer");
 			return;
@@ -617,7 +617,7 @@ static int create_big(struct bt_le_ext_adv **adv, struct bt_iso_big **big)
 {
 	int err;
 
-	/* Create a non-connectable non-scannable advertising set */
+	/* Create a non-connectable advertising set */
 	LOG_INF("Creating Extended Advertising set");
 	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_NCONN, NULL, adv);
 	if (err != 0) {

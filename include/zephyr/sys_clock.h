@@ -146,9 +146,9 @@ typedef struct {
 
 /** @endcond */
 
-#if defined(CONFIG_SYS_CLOCK_EXISTS) && !defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
-BUILD_ASSERT(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC != 0,
-	"SYS_CLOCK_HW_CYCLES_PER_SEC must be non-zero!");
+#if defined(CONFIG_SYS_CLOCK_EXISTS) && \
+	(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC == 0)
+#error "SYS_CLOCK_HW_CYCLES_PER_SEC must be non-zero!"
 #endif
 
 
@@ -164,7 +164,7 @@ BUILD_ASSERT(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC != 0,
  * @{
  */
 
-#if defined(CONFIG_SYS_CLOCK_EXISTS) && !defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
+#ifdef CONFIG_SYS_CLOCK_EXISTS
 
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) || \
 	(MSEC_PER_SEC % CONFIG_SYS_CLOCK_TICKS_PER_SEC) || \
@@ -250,21 +250,6 @@ k_timepoint_t sys_timepoint_calc(k_timeout_t timeout);
  * @see sys_timepoint_calc()
  */
 k_timeout_t sys_timepoint_timeout(k_timepoint_t timepoint);
-
-/**
- * @brief Provided for backward compatibility.
- *
- * This is deprecated. Consider `sys_timepoint_calc()` instead.
- *
- * @see sys_timepoint_calc()
- */
-__deprecated
-static inline uint64_t sys_clock_timeout_end_calc(k_timeout_t timeout)
-{
-	k_timepoint_t tp = sys_timepoint_calc(timeout);
-
-	return tp.tick;
-}
 
 /**
  * @brief Compare two timepoint values.

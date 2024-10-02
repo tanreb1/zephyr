@@ -15,8 +15,8 @@ laptops. The call control client will also thus typically be the advertiser.
 The client can control the states of calls on a server using the call control
 point.
 
-It is necessary to have :code:`BT_DEBUG_TBS_CLIENT` enabled for using the client
-interactively.
+It is necessary to have :kconfig:option:`CONFIG_BT_TBS_CLIENT_LOG_LEVEL_DBG`
+enabled for using the client interactively.
 
 Using the telephone bearer service client
 =========================================
@@ -31,7 +31,7 @@ Since a server may have multiple TBS instances, most of the tbs_client commands
 will take an index (starting from 0) as input. Joining calls require at least 2
 call IDs, and all call indexes shall be on the same TBS instance.
 
-A server may also have a GTBS instance, which is an abstraction layer for all
+A server will also have a GTBS instance, which is an abstraction layer for all
 the telephone bearers on the server. If the server has both GTBS and TBS,
 the client may subscribe and use either when sending requests if
 :code:`BT_TBS_CLIENT_GTBS` is enabled.
@@ -160,8 +160,8 @@ The telephone bearer service is a service that typically resides on devices that
 can make calls, including calls from apps such as Skype, e.g. (smart)phones and
 PCs.
 
-It is necessary to have :code:`BT_DEBUG_TBS` enabled for using the TBS server
-interactively.
+It is necessary to have :kconfig:option:`CONFIG_BT_TBS_LOG_LEVEL_DBG` enabled
+for using the TBS server interactively.
 
 Using the telephone bearer service
 ==================================
@@ -169,6 +169,8 @@ TBS can be controlled locally, or by a remote device (when in a call). For
 example a remote device may initiate a call to the device with the TBS server,
 or the TBS server may initiate a call to remote device, without a TBS_CLIENT client.
 The TBS implementation is capable of fully controlling any call.
+Omitting an index for commands where a :code:`<instance_index>` can be supplied, defaults to the
+GTBS bearer.
 
 .. code-block:: console
 

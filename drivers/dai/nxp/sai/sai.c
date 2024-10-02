@@ -95,20 +95,14 @@ void sai_isr(const void *parameter)
 
 	/* check for TX FIFO error */
 	if (SAI_TX_RX_STATUS_IS_SET(DAI_DIR_TX, data->regmap, kSAI_FIFOErrorFlag)) {
-		LOG_ERR("FIFO underrun detected");
-		/* TODO: this will crash the program and should be addressed as
-		 * mentioned in TODO list's 2).
-		 */
-		z_irq_spurious(NULL);
+		LOG_WRN("FIFO underrun detected");
+		SAI_TX_RX_STATUS_CLEAR(DAI_DIR_TX, data->regmap, kSAI_FIFOErrorFlag);
 	}
 
 	/* check for RX FIFO error */
 	if (SAI_TX_RX_STATUS_IS_SET(DAI_DIR_RX, data->regmap, kSAI_FIFOErrorFlag)) {
-		LOG_ERR("FIFO overrun detected");
-		/* TODO: this will crash the program and should be addressed as
-		 * mentioned in TODO list's 2).
-		 */
-		z_irq_spurious(NULL);
+		LOG_WRN("FIFO overrun detected");
+		SAI_TX_RX_STATUS_CLEAR(DAI_DIR_RX, data->regmap, kSAI_FIFOErrorFlag);
 	}
 }
 
@@ -696,7 +690,7 @@ static int sai_trigger_start(const struct device *dev,
 	struct sai_data *data;
 	const struct sai_config *cfg;
 	uint32_t old_state;
-	int ret;
+	int ret, i;
 
 	data = dev->data;
 	cfg = dev->config;
@@ -733,7 +727,12 @@ static int sai_trigger_start(const struct device *dev,
 	SAI_TX_RX_ENABLE_DISABLE_IRQ(dir, data->regmap,
 				     kSAI_FIFOErrorInterruptEnable, true);
 
-	/* TODO: is there a need to write some words to the FIFO to avoid starvation? */
+	/* avoid initial underrun by writing a frame's worth of 0s */
+	if (dir == DAI_DIR_TX) {
+		for (i = 0; i < data->cfg.channels; i++) {
+			SAI_WriteData(UINT_TO_I2S(data->regmap), cfg->tx_dline, 0x0);
+		}
+	}
 
 	/* TODO: for now, only DMA mode is supported */
 	SAI_TX_RX_DMA_ENABLE_DISABLE(dir, data->regmap, true);

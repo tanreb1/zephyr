@@ -19,6 +19,10 @@
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/byteorder.h>
 
+#ifndef CONFIG_NATIVE_LIBC
+extern void getopt_init(void);
+#endif
+
 static inline bool is_ascii(uint8_t data)
 {
 	return (data >= 0x30 && data <= 0x39) || (data >= 0x61 && data <= 0x66) ||
@@ -101,6 +105,9 @@ static int cmd_dump(const struct shell *sh, size_t argc, char **argv)
 	mem_addr_t addr = -1;
 
 	optind = 1;
+#ifndef CONFIG_NATIVE_LIBC
+	getopt_init();
+#endif
 	while ((rv = getopt(argc, argv, "a:s:w:")) != -1) {
 		switch (rv) {
 		case 'a':
@@ -308,10 +315,6 @@ static int cmd_devmem(const struct shell *sh, size_t argc, char **argv)
 	uint32_t value = 0;
 	uint8_t width;
 
-	if (argc < 2 || argc > 4) {
-		return -EINVAL;
-	}
-
 	phys_addr = strtoul(argv[1], NULL, 16);
 
 #if defined(CONFIG_MMU) || defined(CONFIG_PCIE)
@@ -349,7 +352,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_devmem,
 			       SHELL_CMD_ARG(dump, NULL,
 					     "Usage:\n"
 					     "devmem dump -a <address> -s <size> [-w <width>]\n",
-					     cmd_dump, 4, 6),
+					     cmd_dump, 5, 2),
 			       SHELL_CMD_ARG(load, NULL,
 					     "Usage:\n"
 					     "devmem load [options] [address]\n"
@@ -358,11 +361,11 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_devmem,
 					     cmd_load, 2, 1),
 			       SHELL_SUBCMD_SET_END);
 
-SHELL_CMD_REGISTER(devmem, &sub_devmem,
+SHELL_CMD_ARG_REGISTER(devmem, &sub_devmem,
 		   "Read/write physical memory\n"
 		   "Usage:\n"
 		   "Read memory at address with optional width:\n"
-		   "devmem address [width]\n"
+		   "devmem <address> [<width>]\n"
 		   "Write memory at address with mandatory width and value:\n"
-		   "devmem address <width> <value>",
-		   cmd_devmem);
+		   "devmem <address> <width> <value>",
+		   cmd_devmem, 2, 2);

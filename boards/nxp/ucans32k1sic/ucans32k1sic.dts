@@ -98,6 +98,10 @@
 	};
 };
 
+&cpu0 {
+	clock-frequency = <80000000>;
+};
+
 &gpioa {
 	status = "okay";
 };
@@ -179,8 +183,6 @@
 	pinctrl-0 = <&flexcan0_default>;
 	pinctrl-names = "default";
 	phys = <&can_phy0>;
-	bus-speed = <125000>;
-	bus-speed-data = <1000000>;
 	status = "okay";
 };
 
@@ -188,7 +190,17 @@
 	pinctrl-0 = <&flexcan1_default>;
 	pinctrl-names = "default";
 	phys = <&can_phy1>;
-	bus-speed = <125000>;
-	bus-speed-data = <1000000>;
+	status = "okay";
+};
+
+&adc0 {
+	sample-time = <65>;
+	vref-mv = <3300>;
+	status = "okay";
+};
+
+&adc1 {
+	sample-time = <65>;
+	vref-mv = <3300>;
 	status = "okay";
 };

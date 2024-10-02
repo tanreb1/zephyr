@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/util.h>
 
@@ -68,7 +68,7 @@ struct bt_buf_data {
 
 /** Helper to calculate needed buffer size for HCI ISO packets. */
 #define BT_BUF_ISO_SIZE(size) BT_BUF_SIZE(BT_HCI_ISO_HDR_SIZE + \
-					  BT_HCI_ISO_TS_DATA_HDR_SIZE + \
+					  BT_HCI_ISO_SDU_TS_HDR_SIZE + \
 					  (size))
 
 /** Data size needed for HCI ACL RX buffers */

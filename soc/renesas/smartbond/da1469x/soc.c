@@ -109,7 +109,7 @@ static void z_renesas_configure_cache(void)
 }
 #endif /* CONFIG_HAS_FLASH_LOAD_OFFSET */
 
-void z_arm_platform_init(void)
+void soc_reset_hook(void)
 {
 #if defined(CONFIG_PM)
 	uint32_t *ivt;
@@ -131,7 +131,10 @@ void z_arm_platform_init(void)
 #endif
 }
 
-static int renesas_da1469x_init(void)
+/* defined in power.c */
+extern int renesas_da1469x_pm_init(void);
+
+void soc_early_init_hook(void)
 {
 	/* Freeze watchdog until configured */
 	GPREG->SET_FREEZE_REG = GPREG_SET_FREEZE_REG_FRZ_SYS_WDOG_Msk;
@@ -145,9 +148,6 @@ static int renesas_da1469x_init(void)
 				CRG_TOP_PMU_CTRL_REG_PERIPH_SLEEP_Msk  |
 				CRG_TOP_PMU_CTRL_REG_COM_SLEEP_Msk     |
 				CRG_TOP_PMU_CTRL_REG_RADIO_SLEEP_Msk);
-
-	/* PDC should take care of PD_SYS */
-	CRG_TOP->PMU_CTRL_REG &= ~CRG_TOP_PMU_CTRL_REG_SYS_SLEEP_Msk;
 
 #if defined(CONFIG_PM)
 	/* Enable cache retainability */
@@ -167,16 +167,19 @@ static int renesas_da1469x_init(void)
 				CRG_TOP_BOD_CTRL_REG_BOD_V30_EN_Msk    |
 				CRG_TOP_BOD_CTRL_REG_BOD_VBAT_EN_Msk);
 
-	da1469x_pdc_reset();
-
 	da1469x_otp_init();
 	da1469x_trimv_init_from_otp();
 
 	da1469x_pd_init();
+
+	/*
+	 * Take PD_SYS control.
+	 */
 	da1469x_pd_acquire(MCU_PD_DOMAIN_SYS);
 	da1469x_pd_acquire(MCU_PD_DOMAIN_TIM);
 
-	return 0;
+	da1469x_pdc_reset();
+#if CONFIG_PM
+	renesas_da1469x_pm_init();
+#endif
 }
-
-SYS_INIT(renesas_da1469x_init, PRE_KERNEL_1, 0);

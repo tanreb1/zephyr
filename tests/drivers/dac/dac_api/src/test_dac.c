@@ -26,7 +26,9 @@
 	defined(CONFIG_BOARD_NUCLEO_L552ZE_Q) || \
 	defined(CONFIG_BOARD_STM32L562E_DK) || \
 	defined(CONFIG_BOARD_STM32H573I_DK) || \
+	defined(CONFIG_BOARD_STM32U083C_DK) || \
 	defined(CONFIG_BOARD_B_U585I_IOT02A) || \
+	defined(CONFIG_BOARD_NUCLEO_U083RC) || \
 	defined(CONFIG_BOARD_NUCLEO_U575ZI_Q) || \
 	defined(CONFIG_BOARD_NUCLEO_U5A5ZJ_Q) || \
 	defined(CONFIG_BOARD_NUCLEO_WL55JC) || \
@@ -45,6 +47,7 @@
 #elif defined(CONFIG_BOARD_TWR_KE18F) || \
 	defined(CONFIG_BOARD_FRDM_K64F) || \
 	defined(CONFIG_BOARD_FRDM_K22F) || \
+	defined(CONFIG_BOARD_FRDM_MCXN947) || \
 	defined(CONFIG_BOARD_SEEEDUINO_XIAO) || \
 	defined(CONFIG_BOARD_ARDUINO_MKRZERO) || \
 	defined(CONFIG_BOARD_ARDUINO_ZERO) || \
@@ -69,6 +72,7 @@
 	defined(CONFIG_BOARD_ESP32_DEVKITC_WROVER) || \
 	defined(CONFIG_BOARD_ESP_WROVER_KIT) || \
 	defined(CONFIG_BOARD_ESP32S2_SAOLA) || \
+	defined(CONFIG_BOARD_ESP32S2_DEVKITC) || \
 	defined(CONFIG_BOARD_GD32A503V_EVAL) || \
 	defined(CONFIG_BOARD_GD32E103V_EVAL) || \
 	defined(CONFIG_BOARD_GD32F450I_EVAL) || \
@@ -85,6 +89,13 @@
 
 #define DAC_DEVICE_NODE		DT_NODELABEL(dacc)
 #define DAC_RESOLUTION		12
+#define DAC_CHANNEL_ID		0
+
+#elif defined(CONFIG_BOARD_RD_RW612_BGA) || \
+	defined(CONFIG_BOARD_FRDM_RW612)
+
+#define DAC_DEVICE_NODE		DT_NODELABEL(dac0)
+#define DAC_RESOLUTION		10
 #define DAC_CHANNEL_ID		0
 
 #else
@@ -110,8 +121,7 @@ static const struct device *init_dac(void)
 	zassert_true(device_is_ready(dac_dev), "DAC device is not ready");
 
 	ret = dac_channel_setup(dac_dev, &dac_ch_cfg);
-	zassert_equal(ret, 0,
-		"Setting up of the first channel failed with code %d", ret);
+	zassert_ok(ret, "Setting up of the first channel failed with code %d", ret);
 
 	return dac_dev;
 }
@@ -128,7 +138,7 @@ ZTEST(dac, test_task_write_value)
 	/* write a value of half the full scale resolution */
 	ret = dac_write_value(dac_dev, DAC_CHANNEL_ID,
 						(1U << DAC_RESOLUTION) / 2);
-	zassert_equal(ret, 0, "dac_write_value() failed with code %d", ret);
+	zassert_ok(ret, "dac_write_value() failed with code %d", ret);
 }
 
 static void *dac_setup(void)

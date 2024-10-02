@@ -29,6 +29,8 @@ extern "C" {
 /**
  * @brief Virtual network interface support functions
  * @defgroup virtual Virtual Network Interface Support Functions
+ * @since 2.6
+ * @version 0.8.0
  * @ingroup networking
  * @{
  */
@@ -40,6 +42,9 @@ enum virtual_interface_caps {
 
 	/** Virtual LAN interface (VLAN) */
 	VIRTUAL_INTERFACE_VLAN = BIT(2),
+
+	/** Virtual Ethernet bridge interface. */
+	VIRTUAL_INTERFACE_BRIDGE = BIT(3),
 
 /** @cond INTERNAL_HIDDEN */
 	/* Marker for capabilities - must be at the end of the enum.
@@ -81,6 +86,7 @@ struct virtual_interface_config {
 #endif
 /** @endcond */
 
+/** Virtual L2 API operations. */
 struct virtual_interface_api {
 	/**
 	 * The net_if_api must be placed in first position in this

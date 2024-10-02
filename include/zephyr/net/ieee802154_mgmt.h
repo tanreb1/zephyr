@@ -322,14 +322,21 @@ struct ieee802154_req_params {
 
 	/** Result address */
 	union {
-		uint16_t short_addr;			  /* in CPU byte order */
-		uint8_t addr[IEEE802154_MAX_ADDR_LENGTH]; /* in big endian */
+		uint16_t short_addr;			  /**< in CPU byte order */
+		uint8_t addr[IEEE802154_MAX_ADDR_LENGTH]; /**< in big endian */
 	};
 
 	/** length of address */
 	uint8_t len;
 	/** Link quality information, between 0 and 255 */
 	uint8_t lqi;
+	/** Flag if association is permitted by the coordinator */
+	bool association_permitted;
+
+	/** Additional payload of the beacon if any.*/
+	uint8_t *beacon_payload;
+	/** Length of the additional payload. */
+	size_t beacon_payload_len;
 };
 
 /**
@@ -339,13 +346,13 @@ struct ieee802154_req_params {
  * see tables 9-9 and 9-10 in section 9.5.
  */
 struct ieee802154_security_params {
-	uint8_t key[16];      /* secKeyDescriptor.secKey */
-	uint8_t key_len;      /* a key length of 16 bytes is mandatory for standards conformance */
-	uint8_t key_mode : 2; /* secKeyIdMode */
-	uint8_t level : 3;    /* Used instead of a frame-specific SecurityLevel parameter when
+	uint8_t key[16];      /**< secKeyDescriptor.secKey */
+	uint8_t key_len;      /**< Key length of 16 bytes is mandatory for standards conformance */
+	uint8_t key_mode : 2; /**< secKeyIdMode */
+	uint8_t level : 3;    /**< Used instead of a frame-specific SecurityLevel parameter when
 			       * constructing the auxiliary security header
 			       */
-	uint8_t _unused : 3;
+	uint8_t _unused : 3;  /**< unused value (ignore) */
 };
 
 #ifdef __cplusplus

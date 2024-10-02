@@ -15,8 +15,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME, LOG_LEVEL);
 
 #define DT_DRV_COMPAT nordic_nrf_timer
 
-#define TIMER_CLOCK(timer_instance) NRF_TIMER_BASE_FREQUENCY_GET(timer_instance)
-
 #define CC_TO_ID(cc_num) (cc_num - 2)
 
 #define ID_TO_CC(idx) (nrf_timer_cc_channel_t)(idx + 2)
@@ -91,6 +89,7 @@ static uint32_t read(const struct device *dev)
 
 	nrf_timer_task_trigger(timer,
 			       nrf_timer_capture_task_get(COUNTER_READ_CC));
+	nrf_barrier_w();
 
 	return nrf_timer_cc_get(timer, COUNTER_READ_CC);
 }
@@ -162,6 +161,7 @@ static int set_cc(const struct device *dev, uint8_t id, uint32_t val,
 	 */
 	now = read(dev);
 	prev_val = nrf_timer_cc_get(reg, chan);
+	nrf_barrier_r();
 	nrf_timer_cc_set(reg, chan, now);
 	nrf_timer_event_clear(reg, evt);
 
@@ -419,6 +419,14 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
 			    irq_handler, DEVICE_DT_INST_GET(idx), 0))		\
 	)
 
+#if !defined(CONFIG_SOC_SERIES_BSIM_NRFXX)
+#define CHECK_MAX_FREQ(idx)									\
+		BUILD_ASSERT(DT_INST_PROP(idx, max_frequency) ==				\
+			NRF_TIMER_BASE_FREQUENCY_GET((NRF_TIMER_Type *)DT_INST_REG_ADDR(idx)))
+#else
+#define CHECK_MAX_FREQ(idx)
+#endif
+
 #define COUNTER_NRFX_TIMER_DEVICE(idx)								\
 	BUILD_ASSERT(DT_INST_PROP(idx, prescaler) <=						\
 			TIMER_PRESCALER_PRESCALER_Msk,						\
@@ -448,7 +456,7 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
 	static MAYBE_CONST_CONFIG struct counter_nrfx_config nrfx_counter_##idx##_config = {	\
 		.info = {									\
 			.max_top_value = (uint32_t)BIT64_MASK(DT_INST_PROP(idx, max_bit_width)),\
-			.freq = TIMER_CLOCK((NRF_TIMER_Type *)DT_INST_REG_ADDR(idx)) /		\
+			.freq = DT_INST_PROP(idx, max_frequency) /				\
 				BIT(DT_INST_PROP(idx, prescaler)),				\
 			.flags = COUNTER_CONFIG_INFO_COUNT_UP,					\
 			.channels = CC_TO_ID(DT_INST_PROP(idx, cc_num)),			\
@@ -457,6 +465,7 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
 		.timer = (NRF_TIMER_Type *)DT_INST_REG_ADDR(idx),				\
 		LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, idx)				\
 	};											\
+	CHECK_MAX_FREQ(idx);									\
 	DEVICE_DT_INST_DEFINE(idx,								\
 			    counter_##idx##_init,						\
 			    NULL,								\

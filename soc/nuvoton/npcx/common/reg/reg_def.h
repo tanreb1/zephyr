@@ -750,10 +750,14 @@ struct espi_reg {
 #define NPCX_VWSWIRQ_EDGE_IRQ            28
 #define NPCX_VWEVMS_WIRE                 FIELD(0, 4)
 #define NPCX_VWEVMS_VALID                FIELD(4, 4)
+#define NPCX_VWEVMS_INDEX                FIELD(8, 7)
+#define NPCX_VWEVMS_INDEX_EN             15
 #define NPCX_VWEVMS_IE                   18
 #define NPCX_VWEVMS_WE                   20
 #define NPCX_VWEVSM_WIRE                 FIELD(0, 4)
 #define NPCX_VWEVSM_VALID                FIELD(4, 4)
+#define NPCX_VWEVSM_INDEX                FIELD(8, 7)
+#define NPCX_VWEVSM_INDEX_EN             15
 #define NPCX_VWEVSM_BIT_VALID(n)         (4+n)
 #define NPCX_VWEVSM_HW_WIRE              FIELD(24, 4)
 #define NPCX_VWGPSM_INDEX_EN             15
@@ -1913,11 +1917,16 @@ struct i3c_reg {
 #define MCTRL_IBIRESP_ACK_MANDATORY 2 /* ACK with mandatory byte  */
 #define MCTRL_IBIRESP_MANUAL        3
 
+/* For REQUEST = EmitStartAddr */
 enum npcx_i3c_mctrl_type {
 	NPCX_I3C_MCTRL_TYPE_I3C,
 	NPCX_I3C_MCTRL_TYPE_I2C,
 	NPCX_I3C_MCTRL_TYPE_I3C_HDR_DDR,
 };
+
+/* For REQUEST = ForceExit/Target Reset */
+#define MCTRL_TYPE_HDR_EXIT    0
+#define MCTRL_TYPE_TGT_RESTART 2
 
 /* MSTATUS options */
 #define MSTATUS_STATE_IDLE    0x0

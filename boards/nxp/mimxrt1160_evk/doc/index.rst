@@ -145,6 +145,11 @@ already supported, which can also be re-used on this mimxrt1160_evk board:
 +-----------+------------+-------------------------------------+
 | PIT       | on-chip    | pit                                 |
 +-----------+------------+-------------------------------------+
+| DISPLAY   | on-chip    | eLCDIF; MIPI-DSI. Tested with       |
+|           |            | :ref:`rk055hdmipi4m`,               |
+|           |            | :ref:`rk055hdmipi4ma0`,             |
+|           |            | and :ref:`g1120b0mipi` shields      |
++-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
 :zephyr_file:`boards/nxp/mimxrt1160_evk/mimxrt1160_evk_mimxrt1166_cm7_defconfig`
@@ -267,10 +272,8 @@ however the :ref:`pyocd-debug-host-tools` do not yet support programming the
 external flashes on this board so you must reconfigure the board for one of the
 following debug probes instead.
 
-.. _Using J-Link RT1160:
-
 Using J-Link
----------------------------------
+------------
 
 Install the :ref:`jlink-debug-host-tools` and make sure they are in your search
 path.
@@ -278,6 +281,17 @@ path.
 There are two options: the onboard debug circuit can be updated with Segger
 J-Link firmware, or :ref:`jlink-external-debug-probe` can be attached to the
 EVK. See `Using J-Link with MIMXRT1160-EVK or MIMXRT1170-EVK`_ for more details.
+
+Using LinkServer
+----------------
+
+Install the :ref:`linkserver-debug-host-tools` and make sure they are in your
+search path.  LinkServer works with the CMSIS-DAP firmware include in LinkServer
+install. Please follow the ``LPCScrypt\docs\Debug_Probe_Firmware_Programming.pdf``
+for more details.
+
+Linkserver is the default runner. You may also se the ``-r linkserver`` option
+with West to use the LinkServer runner.
 
 Configuring a Console
 =====================
@@ -300,7 +314,7 @@ etc.):
 Flashing
 ========
 
-Here is an example for the :ref:`hello_world` application.
+Here is an example for the :zephyr:code-sample:`hello_world` application.
 
 Before power on the board, make sure SW1 is set to 0001b
 
@@ -321,7 +335,7 @@ see the following message in the terminal:
 Debugging
 =========
 
-Here is an example for the :ref:`hello_world` application.
+Here is an example for the :zephyr:code-sample:`hello_world` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world

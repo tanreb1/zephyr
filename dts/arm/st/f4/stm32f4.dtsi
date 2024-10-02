@@ -2,6 +2,7 @@
  * Copyright (c) 2017 Linaro Limited
  * Copyright (c) 2019 Centaur Analytics, Inc
  * Copyright (c) 2022 Valerio Setti <vsetti@baylibre.com>
+ * Copyright (c) 2024 STMicroelectronics
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -87,6 +88,18 @@
 		pll: pll {
 			#clock-cells = <0>;
 			compatible = "st,stm32f4-pll-clock";
+			status = "disabled";
+		};
+	};
+
+	mcos {
+		mco1: mco1 {
+			compatible = "st,stm32-clock-mco";
+			status = "disabled";
+		};
+
+		mco2: mco2 {
+			compatible = "st,stm32-clock-mco";
 			status = "disabled";
 		};
 	};
@@ -515,6 +528,8 @@
 			interrupts = <41 0>;
 			clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>;
 			prescaler = <32768>;
+			alarms-count = <2>;
+			alrm-exti-line = <17>;
 			status = "disabled";
 
 			bbram: backup_regs {

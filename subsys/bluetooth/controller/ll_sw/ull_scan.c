@@ -228,7 +228,8 @@ uint8_t ll_scan_enable(uint8_t enable)
 	}
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 
-#if defined(CONFIG_BT_CTLR_PRIVACY)
+#if (defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_CTLR_JIT_SCHEDULING)) || \
+	defined(CONFIG_BT_CTLR_PRIVACY)
 	struct lll_scan *lll;
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_ADV_EXT) && is_coded_phy) {
@@ -240,6 +241,7 @@ uint8_t ll_scan_enable(uint8_t enable)
 		own_addr_type = scan->own_addr_type;
 	}
 
+#if defined(CONFIG_BT_CTLR_PRIVACY)
 	ull_filter_scan_update(lll->filter_policy);
 
 	lll->rl_idx = FILTER_IDX_NONE;
@@ -253,6 +255,11 @@ uint8_t ll_scan_enable(uint8_t enable)
 		lll->rpa_gen = 1;
 	}
 #endif /* CONFIG_BT_CTLR_PRIVACY */
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
+	lll->scan_aux_score = 0;
+#endif /* CONFIG_BT_CTLR_ADV_EXT && CONFIG_BT_CTLR_JIT_SCHEDULING */
+#endif /* (CONFIG_BT_CTLR_ADV_EXT && CONFIG_BT_CTLR_JIT_SCHEDULING) || CONFIG_BT_CTLR_PRIVACY */
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
@@ -653,7 +660,7 @@ uint8_t ull_scan_disable(uint8_t handle, struct ll_scan_set *scan)
 
 	err = ull_ticker_stop_with_mark(TICKER_ID_SCAN_BASE + handle,
 					scan, &scan->lll);
-	LL_ASSERT(err == 0 || err == -EALREADY);
+	LL_ASSERT_INFO2(err == 0 || err == -EALREADY, handle, err);
 	if (err) {
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}

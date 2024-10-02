@@ -40,6 +40,16 @@ const clock_arm_pll_config_t armPllConfig = {
 };
 #endif
 
+#if CONFIG_INIT_SYS_PLL
+/* Configure System PLL */
+const clock_sys_pll_config_t sysPllConfig = {
+	.loopDivider = (DT_PROP(DT_CHILD(CCM_NODE, sys_pll), loop_div) - 20) / 2,
+	.numerator = DT_PROP(DT_CHILD(CCM_NODE, sys_pll), numerator),
+	.denominator = DT_PROP(DT_CHILD(CCM_NODE, sys_pll), denominator),
+	.src = DT_PROP(DT_CHILD(CCM_NODE, sys_pll), src),
+};
+#endif
+
 #if CONFIG_USB_DC_NXP_EHCI
 /* USB PHY condfiguration */
 #define BOARD_USB_PHY_D_CAL (0x0CU)
@@ -160,6 +170,10 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_InitVideoPll(&videoPllConfig);
 #endif
 
+#if CONFIG_INIT_SYS_PLL
+	CLOCK_InitSysPll(&sysPllConfig);
+#endif
+
 #if DT_NODE_EXISTS(DT_CHILD(CCM_NODE, arm_podf))
 	/* Set ARM PODF */
 	BUILD_ASSERT_PODF_IN_RANGE(arm_podf, 1, 8);
@@ -172,8 +186,13 @@ static ALWAYS_INLINE void clock_init(void)
 	BUILD_ASSERT_PODF_IN_RANGE(ipg_podf, 1, 4);
 	CLOCK_SetDiv(kCLOCK_IpgDiv, DT_PROP(DT_CHILD(CCM_NODE, ipg_podf), clock_div) - 1);
 
+#ifdef CONFIG_SOC_MIMXRT1042
+	/* Set PRE_PERIPH_CLK to SYS_PLL */
+	CLOCK_SetMux(kCLOCK_PrePeriphMux, 0x0);
+#else
 	/* Set PRE_PERIPH_CLK to PLL1, 1200M */
 	CLOCK_SetMux(kCLOCK_PrePeriphMux, 0x3);
+#endif
 
 	/* Set PERIPH_CLK MUX to PRE_PERIPH_CLK */
 	CLOCK_SetMux(kCLOCK_PeriphMux, 0x0);
@@ -224,20 +243,26 @@ static ALWAYS_INLINE void clock_init(void)
 				kIOMUXC_GPR_ENET2RefClkMode, true);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb1), okay) && CONFIG_USB_DC_NXP_EHCI
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb1), okay) && \
+	(CONFIG_USB_DC_NXP_EHCI || CONFIG_UDC_NXP_EHCI)
 	CLOCK_EnableUsbhs0PhyPllClock(kCLOCK_Usb480M,
 		DT_PROP_BY_PHANDLE(DT_NODELABEL(usb1), clocks, clock_frequency));
 	CLOCK_EnableUsbhs0Clock(kCLOCK_Usb480M,
 		DT_PROP_BY_PHANDLE(DT_NODELABEL(usb1), clocks, clock_frequency));
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb1), okay) && CONFIG_USB_DC_NXP_EHCI
 	USB_EhciPhyInit(kUSB_ControllerEhci0, CPU_XTAL_CLK_HZ, &usbPhyConfig);
 #endif
+#endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb2), okay) && CONFIG_USB_DC_NXP_EHCI
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb2), okay) && \
+	(CONFIG_USB_DC_NXP_EHCI || CONFIG_UDC_NXP_EHCI)
 	CLOCK_EnableUsbhs1PhyPllClock(kCLOCK_Usb480M,
 		DT_PROP_BY_PHANDLE(DT_NODELABEL(usb2), clocks, clock_frequency));
 	CLOCK_EnableUsbhs1Clock(kCLOCK_Usb480M,
 		DT_PROP_BY_PHANDLE(DT_NODELABEL(usb2), clocks, clock_frequency));
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb1), okay) && CONFIG_USB_DC_NXP_EHCI
 	USB_EhciPhyInit(kUSB_ControllerEhci1, CPU_XTAL_CLK_HZ, &usbPhyConfig);
+#endif
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) && CONFIG_IMX_USDHC
@@ -307,29 +332,33 @@ void imxrt_audio_codec_pll_init(uint32_t clock_name, uint32_t clk_src,
 }
 #endif
 
+extern void rt10xx_power_init(void);
+extern void imxrt_lpm_init(void);
+
 /**
  *
  * @brief Perform basic hardware initialization
  *
  * Initialize the interrupt controller device drivers.
  * Also initialize the timer device driver, if required.
- *
- * @return 0
  */
-
-static int imxrt_init(void)
+void soc_early_init_hook(void)
 {
 	sys_cache_instr_enable();
 	sys_cache_data_enable();
 
 	/* Initialize system clock */
 	clock_init();
-
-	return 0;
+#ifdef CONFIG_PM
+#ifdef CONFIG_SOC_MIMXRT1064
+	imxrt_lpm_init();
+#endif
+	rt10xx_power_init();
+#endif
 }
 
-#ifdef CONFIG_PLATFORM_SPECIFIC_INIT
-void z_arm_platform_init(void)
+#ifdef CONFIG_SOC_RESET_HOOK
+void soc_reset_hook(void)
 {
 	/* Call CMSIS SystemInit */
 	SystemInit();
@@ -340,5 +369,3 @@ void z_arm_platform_init(void)
 #endif
 }
 #endif
-
-SYS_INIT(imxrt_init, PRE_KERNEL_1, 0);

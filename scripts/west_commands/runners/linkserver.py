@@ -164,13 +164,8 @@ class LinkServerBinaryRunner(ZephyrBinaryRunner):
 
     def do_erase(self, **kwargs):
 
-        if self.core is not None:
-            _cmd_core = ":"+self.core
-        else:
-            _cmd_core = ""
-
         linkserver_cmd = ([self.linkserver, "flash"] + ["--probe", str(self.probe)] +
-                          [self.device+_cmd_core] + ["erase"])
+                          [self.device] + ["erase"])
         self.logger.debug("flash erase command = " + str(linkserver_cmd))
         self.check_call(linkserver_cmd)
 
@@ -192,9 +187,11 @@ class LinkServerBinaryRunner(ZephyrBinaryRunner):
         if self.erase:
             self.do_erase()
 
-        # Use .hex or .bin, preferring .hex over .bin
-        if self.supports_hex and self.hex_name is not None and os.path.isfile(self.hex_name):
+        # Use hex, bin or elf file provided by the buildsystem.
+        # Preferring .hex over .bin and .elf
+        if self.supports_hex() and self.hex_name is not None and os.path.isfile(self.hex_name):
             flash_cmd = (["load", self.hex_name])
+        # Preferring .bin over .elf
         elif self.bin_name is not None and os.path.isfile(self.bin_name):
             if self.dt_flash:
                 load_addr = self.flash_address_from_build_conf(self.build_conf)
@@ -203,9 +200,11 @@ class LinkServerBinaryRunner(ZephyrBinaryRunner):
                 raise RuntimeError("no load flash address could be found...")
 
             flash_cmd = (["load", "--addr", str(load_addr), self.bin_name])
+        elif self.elf_name is not None and os.path.isfile(self.elf_name):
+            flash_cmd = (["load", self.elf_name])
         else:
-            err = 'Cannot flash; no hex ({}) or bin ({}) file found.'
-            raise ValueError(err.format(self.hex_name, self.bin_name))
+            err = 'Cannot flash; no hex ({}), bin ({}) or elf ({}) files found.'
+            raise ValueError(err.format(self.hex_name, self.bin_name, self.elf_name))
 
         # Flash the selected file
         linkserver_cmd = linkserver_cmd + flash_cmd

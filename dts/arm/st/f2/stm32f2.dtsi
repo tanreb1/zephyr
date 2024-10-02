@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018 qianfan Zhao
  * Copyright (c) 2019 Centaur Analytics, Inc
+ * Copyright (c) 2024 STMicroelectronics
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -202,6 +203,8 @@
 			clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>;
 			interrupts = <41 0>;
 			prescaler = <32768>;
+			alarms-count = <2>;
+			alrm-exti-line = <17>;
 			status = "disabled";
 
 			bbram: backup_regs {
@@ -704,9 +707,8 @@
 		compatible = "st,stm32-temp";
 		io-channels = <&adc1 16>;
 		status = "disabled";
+		avgslope = "2.5";
 		v25 = <760>;
-		ntc;
-		avgslope = <25>;
 	};
 
 	otgfs_phy: otgfs_phy {

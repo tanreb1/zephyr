@@ -7,6 +7,18 @@
 #ifndef ZEPHYR_INCLUDE_NET_HTTP_SERVICE_H_
 #define ZEPHYR_INCLUDE_NET_HTTP_SERVICE_H_
 
+/**
+ * @file service.h
+ *
+ * @brief HTTP service API
+ *
+ * @defgroup http_service HTTP service API
+ * @since 3.4
+ * @version 0.1.0
+ * @ingroup networking
+ * @{
+ */
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -18,8 +30,11 @@
 extern "C" {
 #endif
 
+/** HTTP resource description */
 struct http_resource_desc {
+	/** Resource name */
 	const char *resource;
+	/** Detail associated with this resource */
 	void *detail;
 };
 
@@ -46,6 +61,8 @@ struct http_resource_desc {
 		.resource = _resource,                                                             \
 		.detail = (void *)(_detail),                                                       \
 	}
+
+/** @cond INTERNAL_HIDDEN */
 
 struct http_service_desc {
 	const char *host;
@@ -79,11 +96,14 @@ struct http_service_desc {
 					     (GET_ARG_N(1, GET_ARGS_LESS_N(1, __VA_ARGS__))))), ())\
 	}
 
+/** @endcond */
+
 /**
  * @brief Define an HTTP service without static resources.
  *
- * @note The @p _host parameter must be non-`NULL`. It is used to specify an IP address either in
- * IPv4 or IPv6 format a fully-qualified hostname or a virtual host.
+ * @note The @p _host parameter is used to specify an IP address either in
+ * IPv4 or IPv6 format a fully-qualified hostname or a virtual host. If left NULL, the listening
+ * port will listen on all addresses.
  *
  * @note The @p _port parameter must be non-`NULL`. It points to a location that specifies the port
  * number to use for the service. If the specified port number is zero, then an ephemeral port
@@ -103,8 +123,9 @@ struct http_service_desc {
 /**
  * @brief Define an HTTPS service without static resources.
  *
- * @note The @p _host parameter must be non-`NULL`. It is used to specify an IP address either in
- * IPv4 or IPv6 format a fully-qualified hostname or a virtual host.
+ * @note The @p _host parameter is used to specify an IP address either in
+ * IPv4 or IPv6 format a fully-qualified hostname or a virtual host. If left NULL, the listening
+ * port will listen on all addresses.
  *
  * @note The @p _port parameter must be non-`NULL`. It points to a location that specifies the port
  * number to use for the service. If the specified port number is zero, then an ephemeral port
@@ -130,8 +151,9 @@ struct http_service_desc {
 /**
  * @brief Define an HTTP service with static resources.
  *
- * @note The @p _host parameter must be non-`NULL`. It is used to specify an IP address either in
- * IPv4 or IPv6 format a fully-qualified hostname or a virtual host.
+ * @note The @p _host parameter is used to specify an IP address either in
+ * IPv4 or IPv6 format a fully-qualified hostname or a virtual host. If left NULL, the listening
+ * port will listen on all addresses.
  *
  * @note The @p _port parameter must be non-`NULL`. It points to a location that specifies the port
  * number to use for the service. If the specified port number is zero, then an ephemeral port
@@ -155,8 +177,9 @@ struct http_service_desc {
 /**
  * @brief Define an HTTPS service with static resources.
  *
- * @note The @p _host parameter must be non-`NULL`. It is used to specify an IP address either in
- * IPv4 or IPv6 format a fully-qualified hostname or a virtual host.
+ * @note The @p _host parameter is used to specify an IP address either in
+ * IPv4 or IPv6 format a fully-qualified hostname or a virtual host. If left NULL, the listening
+ * port will listen on all addresses.
  *
  * @note The @p _port parameter must be non-`NULL`. It points to a location that specifies the port
  * number to use for the service. If the specified port number is zero, then an ephemeral port
@@ -200,7 +223,7 @@ struct http_service_desc {
 /**
  * @brief Iterate over all HTTP services.
  *
- * @param _it Name of iterator (of type @ref http_service_desc)
+ * @param _it Name of http_service_desc iterator
  */
 #define HTTP_SERVICE_FOREACH(_it) STRUCT_SECTION_FOREACH(http_service_desc, _it)
 
@@ -234,5 +257,9 @@ struct http_service_desc {
 #ifdef __cplusplus
 }
 #endif
+
+/**
+ * @}
+ */
 
 #endif /* ZEPHYR_INCLUDE_NET_HTTP_SERVICE_H_ */

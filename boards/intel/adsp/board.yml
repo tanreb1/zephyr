@@ -6,4 +6,13 @@ boards:
         variants:
           - name: 'tgph'
       - name: ace15_mtpm
+        variants:
+          - name: 'sim'
       - name: ace20_lnl
+        variants:
+          - name: 'sim'
+      - name: ace30
+        variants:
+          - name: 'ptl'
+            variants:
+              - name: 'sim'

@@ -22,7 +22,7 @@ supported:
   - octospi
   - can
   - usb_device
-  - usb
   - i2c
-  - sdhc
+  - rtc
+  - usbd
 vendor: st
